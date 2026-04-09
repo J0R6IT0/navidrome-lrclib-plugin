@@ -26,8 +26,7 @@
           "description": "If the direct lookup fails, performs a final search using the track title and first artist.",
           "default": true
         }
-      },
-      "required": ["useSyncedLyrics", "useSearchFallback"]
+      }
     }
   }
 }
