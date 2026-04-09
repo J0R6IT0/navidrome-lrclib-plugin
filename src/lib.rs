@@ -8,11 +8,15 @@ use nd_pdk::{
 use serde::Deserialize;
 use std::collections::HashMap;
 
+const USER_AGENT: &str =
+    "navidrome-lrclib-plugin/1.1.0 (https://github.com/J0R6IT0/navidrome-lrclib-plugin)";
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Response {
-    synced_lyrics: String,
-    plain_lyrics: String,
+struct LyricsRecord {
+    synced_lyrics: Option<String>,
+    plain_lyrics: Option<String>,
+    duration: f32,
 }
 
 #[derive(Default)]
@@ -47,23 +51,22 @@ impl Lyrics for Plugin {
             .unwrap_or_else(|| "true".into())
             == "true";
 
-        let attempts: &[(&str, bool)] = &[
-            (&all_artists, true),
-            (first_artist, true),
-            (&all_artists, false),
-            (first_artist, false),
-        ];
+        let use_search_fallback = config::get("useSearchFallback")
+            .map_err(|e| LyricsError::new(e.to_string()))?
+            .unwrap_or_else(|| "true".into())
+            == "true";
 
-        for (artist, include_album) in attempts {
-            let album_param = include_album.then_some(album);
-            if let Some(response) = fetch_lyrics(artist, title, album_param, &duration)? {
-                if let Some(text) = pick_text(response, use_synced) {
-                    return Ok(GetLyricsResponse {
-                        lyrics: vec![LyricsText {
-                            lang: "xxx".into(),
-                            text,
-                        }],
-                    });
+        if let Some(record) = fetch_lyrics(&all_artists, title, Some(album), &duration)? {
+            if let Some(text) = pick_text(record, use_synced) {
+                return Ok(lyrics_response(text));
+            }
+        }
+
+        if use_search_fallback {
+            let query = format!("{} {}", first_artist, title);
+            if let Some(record) = search_lyrics(&query, track.duration)? {
+                if let Some(text) = pick_text(record, use_synced) {
+                    return Ok(lyrics_response(text));
                 }
             }
         }
@@ -77,7 +80,7 @@ fn fetch_lyrics(
     title: &str,
     album: Option<&str>,
     duration: &str,
-) -> Result<Option<Response>, LyricsError> {
+) -> Result<Option<LyricsRecord>, LyricsError> {
     let mut params = vec![
         ("artist_name", artist),
         ("track_name", title),
@@ -89,18 +92,7 @@ fn fetch_lyrics(
 
     let query = serde_urlencoded::to_string(params).map_err(|e| LyricsError::new(e.to_string()))?;
 
-    let request = HTTPRequest {
-        url: format!("https://lrclib.net/api/get?{}", query),
-        method: "GET".into(),
-        headers: HashMap::new(),
-        no_follow_redirects: false,
-        body: Vec::new(),
-        timeout_ms: 10_000,
-    };
-
-    let response = http::send(request)
-        .map_err(|e| LyricsError::new(e.to_string()))?
-        .ok_or_else(|| LyricsError::new("Empty HTTP response"))?;
+    let response = send_request(&format!("https://lrclib.net/api/get?{}", query))?;
 
     match response.status_code {
         200 => {
@@ -113,11 +105,55 @@ fn fetch_lyrics(
     }
 }
 
-fn pick_text(response: Response, use_synced: bool) -> Option<String> {
-    let text = if use_synced && !response.synced_lyrics.is_empty() {
-        response.synced_lyrics
-    } else {
-        response.plain_lyrics
-    };
-    (!text.is_empty()).then_some(text)
+fn search_lyrics(q: &str, duration: f32) -> Result<Option<LyricsRecord>, LyricsError> {
+    let query =
+        serde_urlencoded::to_string([("q", q)]).map_err(|e| LyricsError::new(e.to_string()))?;
+
+    let response = send_request(&format!("https://lrclib.net/api/search?{}", query))?;
+
+    if response.status_code != 200 {
+        return Err(LyricsError::new(format!(
+            "lrclib search returned status {}",
+            response.status_code
+        )));
+    }
+
+    let records: Vec<LyricsRecord> =
+        serde_json::from_slice(&response.body).map_err(|e| LyricsError::new(e.to_string()))?;
+
+    Ok(records
+        .into_iter()
+        .find(|r| (r.duration - duration).abs() <= 2.))
+}
+
+fn send_request(url: &str) -> Result<http::HTTPResponse, LyricsError> {
+    let mut headers = HashMap::new();
+    headers.insert("User-Agent".into(), USER_AGENT.into());
+
+    http::send(HTTPRequest {
+        url: url.into(),
+        method: "GET".into(),
+        headers,
+        no_follow_redirects: false,
+        body: Vec::new(),
+        timeout_ms: 10_000,
+    })
+    .map_err(|e| LyricsError::new(e.to_string()))?
+    .ok_or_else(|| LyricsError::new("Empty HTTP response"))
+}
+
+fn pick_text(record: LyricsRecord, use_synced: bool) -> Option<String> {
+    let synced = record.synced_lyrics.filter(|s| !s.is_empty());
+    let plain = record.plain_lyrics.filter(|s| !s.is_empty());
+
+    if use_synced { synced.or(plain) } else { plain }
+}
+
+fn lyrics_response(text: String) -> GetLyricsResponse {
+    GetLyricsResponse {
+        lyrics: vec![LyricsText {
+            lang: "xxx".into(),
+            text,
+        }],
+    }
 }
