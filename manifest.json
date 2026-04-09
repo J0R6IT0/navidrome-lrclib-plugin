@@ -1,0 +1,27 @@
+{
+  "name": "LRCLIB",
+  "author": "Jorge Pardo",
+  "version": "1.0.0",
+  "description": "Fetch lyrics from LRCLIB",
+  "website": "https://github.com/J0R6IT0/navidrome-lrclib-plugin",
+  "permissions": {
+    "http": {
+      "reason": "To fetch lyrics from the internet",
+      "requiredHosts": ["lrclib.net"]
+    }
+  },
+  "config": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "useSyncedLyrics": {
+          "type": "boolean",
+          "title": "Use synchronized lyrics",
+          "description": "If enabled, the plugin returns synced lyrics when available, otherwise plain lyrics",
+          "default": true
+        }
+      },
+      "required": ["useSyncedLyrics"]
+    }
+  }
+}
