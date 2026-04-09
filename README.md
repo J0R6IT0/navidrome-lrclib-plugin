@@ -1,7 +1,12 @@
 ## Navidrome LRCLIB Plugin
 
 Simple Navidrome plugin to fetch lyrics from [lrclib.net](https://lrclib.net/).
-Supports choosing betweeh syncronized and plain lyrics via a config option.
+
+Features:
+
+- Choose between synced and plain lyrics
+- Fallback to search endpoint when direct lookup fails
+- (Planned) Inject "♪" symbol in long instrumental sections
 
 ## Instalation
 

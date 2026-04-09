@@ -17,7 +17,10 @@ const BASE_URL: &str = "https://lrclib.net/api";
 struct LyricsRecord {
     synced_lyrics: Option<String>,
     plain_lyrics: Option<String>,
+    #[serde(default)]
     duration: f32,
+    #[serde(default)]
+    instrumental: bool,
 }
 
 #[derive(Default)]
@@ -142,6 +145,10 @@ fn send_request(url: &str) -> Result<HTTPResponse, LyricsError> {
 }
 
 fn pick_text(record: LyricsRecord, use_synced: bool) -> Option<String> {
+    if record.instrumental {
+        return Some("Instrumental".to_string());
+    }
+
     let synced = record.synced_lyrics.filter(|s| !s.is_empty());
     let plain = record.plain_lyrics.filter(|s| !s.is_empty());
 
