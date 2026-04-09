@@ -1,7 +1,7 @@
 use nd_pdk::{
     host::{
         config,
-        http::{self, HTTPRequest},
+        http::{self, HTTPRequest, HTTPResponse},
     },
     lyrics::{Error as LyricsError, GetLyricsRequest, GetLyricsResponse, Lyrics, LyricsText},
 };
@@ -9,7 +9,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 const USER_AGENT: &str =
-    "navidrome-lrclib-plugin/1.1.0 (https://github.com/J0R6IT0/navidrome-lrclib-plugin)";
+    "navidrome-lrclib-plugin/1.1.1 (https://github.com/J0R6IT0/navidrome-lrclib-plugin)";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,7 +46,7 @@ impl Lyrics for Plugin {
         let album = track.album.as_str();
         let duration = track.duration.round().to_string();
 
-        let use_synced = config::get("useSyncedLyrics")
+        let fetch_synced = config::get("fetchSyncedLyrics")
             .map_err(|e| LyricsError::new(e.to_string()))?
             .unwrap_or_else(|| "true".into())
             == "true";
@@ -57,7 +57,7 @@ impl Lyrics for Plugin {
             == "true";
 
         if let Some(record) = fetch_lyrics(&all_artists, title, Some(album), &duration)? {
-            if let Some(text) = pick_text(record, use_synced) {
+            if let Some(text) = pick_text(record, fetch_synced) {
                 return Ok(lyrics_response(text));
             }
         }
@@ -65,7 +65,7 @@ impl Lyrics for Plugin {
         if use_search_fallback {
             let query = format!("{} {}", first_artist, title);
             if let Some(record) = search_lyrics(&query, track.duration)? {
-                if let Some(text) = pick_text(record, use_synced) {
+                if let Some(text) = pick_text(record, fetch_synced) {
                     return Ok(lyrics_response(text));
                 }
             }
@@ -126,7 +126,7 @@ fn search_lyrics(q: &str, duration: f32) -> Result<Option<LyricsRecord>, LyricsE
         .find(|r| (r.duration - duration).abs() <= 2.))
 }
 
-fn send_request(url: &str) -> Result<http::HTTPResponse, LyricsError> {
+fn send_request(url: &str) -> Result<HTTPResponse, LyricsError> {
     let mut headers = HashMap::new();
     headers.insert("User-Agent".into(), USER_AGENT.into());
 
