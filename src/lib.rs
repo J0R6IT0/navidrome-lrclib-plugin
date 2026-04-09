@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 const USER_AGENT: &str =
     "navidrome-lrclib-plugin/1.1.1 (https://github.com/J0R6IT0/navidrome-lrclib-plugin)";
+const BASE_URL: &str = "https://lrclib.net/api";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,7 +57,7 @@ impl Lyrics for Plugin {
             .unwrap_or_else(|| "true".into())
             == "true";
 
-        if let Some(record) = fetch_lyrics(&all_artists, title, Some(album), &duration)? {
+        if let Some(record) = fetch_lyrics(&all_artists, title, album, &duration)? {
             if let Some(text) = pick_text(record, fetch_synced) {
                 return Ok(lyrics_response(text));
             }
@@ -78,21 +79,19 @@ impl Lyrics for Plugin {
 fn fetch_lyrics(
     artist: &str,
     title: &str,
-    album: Option<&str>,
+    album: &str,
     duration: &str,
 ) -> Result<Option<LyricsRecord>, LyricsError> {
-    let mut params = vec![
+    let params = vec![
         ("artist_name", artist),
         ("track_name", title),
+        ("album_name", album),
         ("duration", duration),
     ];
-    if let Some(album) = album {
-        params.push(("album_name", album));
-    }
 
     let query = serde_urlencoded::to_string(params).map_err(|e| LyricsError::new(e.to_string()))?;
 
-    let response = send_request(&format!("https://lrclib.net/api/get?{}", query))?;
+    let response = send_request(&format!("{}/get?{}", BASE_URL, query))?;
 
     match response.status_code {
         200 => {
@@ -109,7 +108,7 @@ fn search_lyrics(q: &str, duration: f32) -> Result<Option<LyricsRecord>, LyricsE
     let query =
         serde_urlencoded::to_string([("q", q)]).map_err(|e| LyricsError::new(e.to_string()))?;
 
-    let response = send_request(&format!("https://lrclib.net/api/search?{}", query))?;
+    let response = send_request(&format!("{}/search?{}", BASE_URL, query))?;
 
     if response.status_code != 200 {
         return Err(LyricsError::new(format!(
