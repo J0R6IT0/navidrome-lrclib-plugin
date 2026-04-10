@@ -49,12 +49,10 @@ pub fn fetch_lyrics_text(
         }
     }
 
-    if cfg.use_search_fallback {
-        let query = format!("{} {}", first_artist, track.title);
-        if let Some(record) = search_by_query(&query, track.duration)? {
-            if let Some(result) = pick_text(record, cfg.fetch_synced) {
-                return Ok(Some(result));
-            }
+    let query = format!("{} {}", first_artist, track.title);
+    if let Some(record) = search_by_query(&query, track.duration)? {
+        if let Some(result) = pick_text(record, cfg.fetch_synced) {
+            return Ok(Some(result));
         }
     }
 

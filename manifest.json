@@ -14,8 +14,11 @@
       "filesystem": true
     },
     "kvstore": {
-      "reason": "Store plugin state",
+      "reason": "To store plugin state",
       "maxSize": "1KB"
+    },
+    "cache": {
+      "reason": "To cache lyrics."
     }
   },
   "config": {
@@ -27,10 +30,16 @@
           "title": "Fetch synchronized lyrics",
           "default": true
         },
-        "useSearchFallback": {
+        "enableCache": {
           "type": "boolean",
-          "title": "Fall back to search endpoint",
+          "title": "Cache lyrics in memory (compressed)",
           "default": true
+        },
+        "cacheTtl": {
+          "type": "number",
+          "title": "Cache TTL seconds",
+          "default": 86400,
+          "description": "Time (in seconds) that cached lyrics remain valid."
         },
         "writeLyrics": {
           "type": "boolean",
@@ -47,16 +56,19 @@
           "scope": "#/properties/fetchSyncedLyrics"
         },
         {
-          "type": "Label",
-          "text": "If enabled, the plugin returns synced lyrics when available, otherwise plain lyrics."
+          "type": "Control",
+          "scope": "#/properties/enableCache"
         },
         {
           "type": "Control",
-          "scope": "#/properties/useSearchFallback"
-        },
-        {
-          "type": "Label",
-          "text": "If the direct lookup fails, performs a final search using the track title and first artist."
+          "scope": "#/properties/cacheTtl",
+          "rule": {
+            "effect": "SHOW",
+            "condition": {
+              "scope": "#/properties/enableCache",
+              "schema": { "const": true }
+            }
+          }
         },
         {
           "type": "Control",
@@ -64,7 +76,7 @@
         },
         {
           "type": "Label",
-          "text": "Your music library must be mounted with write access and the plugin must have permission to write files. Because of API limitations, the plugin will create a _library folder at the root of the selected music library to store and read lyric files."
+          "text": "NOTE: Your music library must be mounted with write access and the plugin must have permission to write files. Because of API limitations, the plugin will create a _lyrics folder at the root of the selected music library to store and read lyric files"
         }
       ]
     }
