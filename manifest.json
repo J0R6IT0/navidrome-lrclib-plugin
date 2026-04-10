@@ -1,13 +1,21 @@
 {
   "name": "LRCLIB",
   "author": "Jorge Pardo",
-  "version": "1.1.1",
+  "version": "2.0.0",
   "description": "Fetch lyrics from LRCLIB",
   "website": "https://github.com/J0R6IT0/navidrome-lrclib-plugin",
   "permissions": {
     "http": {
       "reason": "To fetch lyrics from the internet",
       "requiredHosts": ["lrclib.net"]
+    },
+    "library": {
+      "reason": "To save lyrics as .lrc files",
+      "filesystem": true
+    },
+    "kvstore": {
+      "reason": "Store plugin state",
+      "maxSize": "1KB"
     }
   },
   "config": {
@@ -17,16 +25,48 @@
         "fetchSyncedLyrics": {
           "type": "boolean",
           "title": "Fetch synchronized lyrics",
-          "description": "If enabled, the plugin returns synced lyrics when available, otherwise plain lyrics",
           "default": true
         },
         "useSearchFallback": {
           "type": "boolean",
           "title": "Fall back to search endpoint",
-          "description": "If the direct lookup fails, performs a final search using the track title and first artist.",
           "default": true
+        },
+        "writeLyrics": {
+          "type": "boolean",
+          "title": "Write lyrics to .lrc files",
+          "default": false
         }
       }
+    },
+    "uiSchema": {
+      "type": "VerticalLayout",
+      "elements": [
+        {
+          "type": "Control",
+          "scope": "#/properties/fetchSyncedLyrics"
+        },
+        {
+          "type": "Label",
+          "text": "If enabled, the plugin returns synced lyrics when available, otherwise plain lyrics."
+        },
+        {
+          "type": "Control",
+          "scope": "#/properties/useSearchFallback"
+        },
+        {
+          "type": "Label",
+          "text": "If the direct lookup fails, performs a final search using the track title and first artist."
+        },
+        {
+          "type": "Control",
+          "scope": "#/properties/writeLyrics"
+        },
+        {
+          "type": "Label",
+          "text": "Your music library must be mounted with write access and the plugin must have permission to write files. Because of API limitations, the plugin will create a _library folder at the root of the selected music library to store and read lyric files."
+        }
+      ]
     }
   }
 }
