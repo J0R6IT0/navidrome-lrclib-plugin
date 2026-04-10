@@ -2,6 +2,9 @@
 
 Simple Navidrome plugin to fetch lyrics from [lrclib.net](https://lrclib.net/).
 
+> [!IMPORTANT]
+> The Navidrome WebUI does not display lyrics from plugins at the moment, you need a third party client in order to see them.
+
 Features:
 
 - Choose between synced and plain lyrics
