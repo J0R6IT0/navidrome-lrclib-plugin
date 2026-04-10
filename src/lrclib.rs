@@ -16,8 +16,7 @@ const BASE_URL: &str = "https://lrclib.net/api";
 struct LyricsRecord {
     synced_lyrics: Option<String>,
     plain_lyrics: Option<String>,
-    #[serde(default)]
-    duration: f32,
+    duration: Option<f32>,
     #[serde(default)]
     instrumental: bool,
 }
@@ -100,9 +99,11 @@ fn search_by_query(q: &str, duration: f32) -> Result<Option<LyricsRecord>, Lyric
     let records: Vec<LyricsRecord> =
         serde_json::from_slice(&response.body).map_err(|e| LyricsError::new(e.to_string()))?;
 
-    Ok(records
-        .into_iter()
-        .find(|r| (r.duration - duration).abs() <= 2.0))
+    Ok(records.into_iter().find(|r| {
+        r.duration
+            .map(|d| (d - duration).abs() <= 2.0)
+            .unwrap_or(false)
+    }))
 }
 
 fn send_request(url: &str) -> Result<HTTPResponse, LyricsError> {
