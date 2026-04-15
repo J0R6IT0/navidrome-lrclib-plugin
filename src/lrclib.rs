@@ -1,5 +1,7 @@
-use crate::config::PluginConfig;
-use crate::storage::LyricsKind;
+use crate::{
+    LyricsKind,
+    config::{LyricsMode, PluginConfig},
+};
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
     lyrics::{Error as LyricsError, TrackInfo},
@@ -43,14 +45,14 @@ pub fn fetch_lyrics_text(
 
     if let Some(record) = get_by_metadata(&all_artists, &track.title, &track.album, &duration_str)?
     {
-        if let Some(result) = pick_text(record, cfg.fetch_synced) {
+        if let Some(result) = pick_text(record, cfg.lyrics_mode) {
             return Ok(Some(result));
         }
     }
 
     let query = format!("{} {}", first_artist, track.title);
     if let Some(record) = search_by_query(&query, track.duration)? {
-        if let Some(result) = pick_text(record, cfg.fetch_synced) {
+        if let Some(result) = pick_text(record, cfg.lyrics_mode) {
             return Ok(Some(result));
         }
     }
@@ -122,19 +124,104 @@ fn send_request(url: &str) -> Result<HTTPResponse, LyricsError> {
     .ok_or_else(|| LyricsError::new("empty HTTP response"))
 }
 
-fn pick_text(record: LyricsRecord, prefer_synced: bool) -> Option<(String, LyricsKind)> {
+fn pick_text(record: LyricsRecord, mode: LyricsMode) -> Option<(String, LyricsKind)> {
     if record.instrumental {
         return Some(("Instrumental".to_string(), LyricsKind::Plain));
     }
 
-    let synced = record.synced_lyrics.filter(|s| !s.is_empty());
-    let plain = record.plain_lyrics.filter(|s| !s.is_empty());
+    let synced = record.synced_lyrics.filter(|s| !s.trim().is_empty());
+    let plain = record.plain_lyrics.filter(|s| !s.trim().is_empty());
 
-    if prefer_synced {
-        synced
+    match mode {
+        LyricsMode::BothPreferSynced => synced
             .map(|t| (t, LyricsKind::Synchronized))
-            .or_else(|| plain.map(|t| (t, LyricsKind::Plain)))
-    } else {
-        plain.map(|t| (t, LyricsKind::Plain))
+            .or_else(|| plain.map(|t| (t, LyricsKind::Plain))),
+        LyricsMode::BothPreferPlain => plain
+            .map(|t| (t, LyricsKind::Plain))
+            .or_else(|| synced.map(|t| (t, LyricsKind::Synchronized))),
+        LyricsMode::SyncedOnly => synced.map(|t| (t, LyricsKind::Synchronized)),
+        LyricsMode::PlainOnly => plain.map(|t| (t, LyricsKind::Plain)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record(synced: Option<&str>, plain: Option<&str>, instrumental: bool) -> LyricsRecord {
+        LyricsRecord {
+            synced_lyrics: synced.map(|s| s.to_string()),
+            plain_lyrics: plain.map(|s| s.to_string()),
+            duration: Some(200.0),
+            instrumental,
+        }
+    }
+
+    #[test]
+    fn test_pick_text_synced_only() {
+        let r = record(Some("SYNC"), Some("PLAIN"), false);
+
+        let res = pick_text(r, LyricsMode::SyncedOnly);
+
+        assert_eq!(res, Some(("SYNC".to_string(), LyricsKind::Synchronized)));
+    }
+
+    #[test]
+    fn test_pick_text_plain_only() {
+        let r = record(Some("SYNC"), Some("PLAIN"), false);
+
+        let res = pick_text(r, LyricsMode::PlainOnly);
+
+        assert_eq!(res, Some(("PLAIN".to_string(), LyricsKind::Plain)));
+    }
+
+    #[test]
+    fn test_pick_text_both_prefer_synced() {
+        let r = record(Some("SYNC"), Some("PLAIN"), false);
+
+        let res = pick_text(r, LyricsMode::BothPreferSynced);
+
+        assert_eq!(res, Some(("SYNC".to_string(), LyricsKind::Synchronized)));
+    }
+
+    #[test]
+    fn test_pick_text_fallback_to_plain() {
+        let r = record(None, Some("PLAIN"), false);
+
+        let res = pick_text(r, LyricsMode::BothPreferSynced);
+
+        assert_eq!(res, Some(("PLAIN".to_string(), LyricsKind::Plain)));
+    }
+
+    #[test]
+    fn test_pick_text_both_prefer_plain() {
+        let r = record(Some("SYNC"), Some("PLAIN"), false);
+
+        let res = pick_text(r, LyricsMode::BothPreferPlain);
+
+        assert_eq!(res, Some(("PLAIN".to_string(), LyricsKind::Plain)));
+    }
+
+    #[test]
+    fn test_pick_text_instrumental_overrides() {
+        let r = record(Some("SYNC"), Some("PLAIN"), true);
+
+        let res = pick_text(r, LyricsMode::SyncedOnly);
+
+        assert_eq!(res, Some(("Instrumental".to_string(), LyricsKind::Plain)));
+    }
+
+    #[test]
+    fn test_empty_strings_are_ignored() {
+        let r = LyricsRecord {
+            synced_lyrics: Some("".to_string()),
+            plain_lyrics: Some("  ".to_string()),
+            duration: Some(200.0),
+            instrumental: false,
+        };
+
+        let res = pick_text(r, LyricsMode::BothPreferSynced);
+
+        assert_eq!(res, None);
     }
 }

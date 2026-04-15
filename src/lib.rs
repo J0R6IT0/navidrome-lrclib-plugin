@@ -1,4 +1,4 @@
-use crate::{cache::LyricsCache, storage::LyricsKind};
+use crate::cache::LyricsCache;
 use config::PluginConfig;
 use extism_pdk::warn;
 use lrclib::fetch_lyrics_text;
@@ -11,6 +11,12 @@ mod cache;
 mod config;
 mod lrclib;
 mod storage;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LyricsKind {
+    Synchronized,
+    Plain,
+}
 
 #[derive(Default)]
 struct Plugin;
@@ -26,13 +32,13 @@ impl Lyrics for Plugin {
         let storage = cfg.write_lyrics.then(|| LyricsStorage::new()).transpose()?;
 
         if let Some(ref cache) = cache {
-            if let Some(cached) = cache.read(&track.id, cfg.fetch_synced) {
+            if let Some(cached) = cache.read(&track.id, cfg.lyrics_mode) {
                 return Ok(make_response(cached));
             }
         }
 
         if let Some(ref storage) = storage {
-            if let Some(stored) = storage.read(&track.id, cfg.fetch_synced)? {
+            if let Some(stored) = storage.read(&track.id, cfg.lyrics_mode)? {
                 return Ok(make_response(stored));
             }
         }

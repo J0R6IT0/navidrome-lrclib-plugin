@@ -1,4 +1,4 @@
-use crate::storage::LyricsKind;
+use crate::{LyricsKind, config::LyricsMode};
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
 use nd_pdk::{host::cache, lyrics::Error as LyricsError};
 use std::io::{Read, Write};
@@ -22,13 +22,16 @@ impl LyricsCache {
         }
     }
 
-    pub fn read(&self, track_id: &str, prefer_synced: bool) -> Option<String> {
-        if prefer_synced {
-            if let Some(text) = self.get(track_id, LyricsKind::Synchronized) {
+    pub fn read(&self, track_id: &str, mode: LyricsMode) -> Option<String> {
+        let order = mode.resolve_order();
+
+        for kind in order {
+            if let Some(text) = self.get(track_id, *kind) {
                 return Some(text);
             }
         }
-        self.get(track_id, LyricsKind::Plain)
+
+        None
     }
 
     pub fn write(&self, track_id: &str, text: &str, kind: LyricsKind) -> Result<(), LyricsError> {
@@ -66,4 +69,52 @@ fn decompress(data: &[u8]) -> Result<String, std::io::Error> {
     let mut out = String::new();
     decoder.read_to_string(&mut out)?;
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compress_decompress_roundtrip() {
+        let input = "some lyrics text\nwith multiple lines";
+
+        let compressed = compress(input.as_bytes()).unwrap();
+        let decompressed = decompress(&compressed).unwrap();
+
+        assert_eq!(decompressed, input);
+    }
+
+    #[test]
+    fn test_decompress_invalid_data_fails() {
+        let invalid = b"not compressed data";
+
+        assert!(decompress(invalid).is_err());
+    }
+
+    #[test]
+    fn test_cache_key_generation() {
+        let id = "track123";
+
+        let synced = cache_key(id, LyricsKind::Synchronized);
+        let plain = cache_key(id, LyricsKind::Plain);
+
+        assert_eq!(synced, "lrc:synced:track123");
+        assert_eq!(plain, "lrc:plain:track123");
+    }
+
+    #[test]
+    fn test_cache_ttl_default() {
+        let cache = LyricsCache::new(0);
+        assert_eq!(cache.ttl, DEFAULT_TTL);
+
+        let cache = LyricsCache::new(-10);
+        assert_eq!(cache.ttl, DEFAULT_TTL);
+    }
+
+    #[test]
+    fn test_cache_ttl_custom() {
+        let cache = LyricsCache::new(123);
+        assert_eq!(cache.ttl, 123);
+    }
 }

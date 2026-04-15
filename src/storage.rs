@@ -7,11 +7,7 @@ use std::{
     path::PathBuf,
 };
 
-#[derive(Clone, Copy)]
-pub enum LyricsKind {
-    Synchronized,
-    Plain,
-}
+use crate::{LyricsKind, config::LyricsMode};
 
 impl LyricsKind {
     fn subdir(self) -> &'static str {
@@ -35,18 +31,11 @@ impl LyricsStorage {
         Ok(Self { lyrics_dir })
     }
 
-    pub fn read(&self, track_id: &str, prefer_synced: bool) -> Result<Option<String>, LyricsError> {
-        let candidates: &[LyricsKind] = if prefer_synced {
-            &[LyricsKind::Synchronized, LyricsKind::Plain]
-        } else {
-            &[LyricsKind::Plain]
-        };
+    pub fn read(&self, track_id: &str, mode: LyricsMode) -> Result<Option<String>, LyricsError> {
+        let order = mode.resolve_order();
 
-        for kind in candidates {
-            let path = self.lrc_path(track_id, *kind);
-            if path.exists() {
-                let text = fs::read_to_string(&path)
-                    .map_err(|e| LyricsError::new(format!("failed to read lyrics cache: {e}")))?;
+        for kind in order {
+            if let Some(text) = self.read_kind(track_id, *kind)? {
                 return Ok(Some(text));
             }
         }
@@ -70,6 +59,19 @@ impl LyricsStorage {
         self.lyrics_dir
             .join(kind.subdir())
             .join(format!("{}.lrc", track_id))
+    }
+
+    fn read_kind(&self, track_id: &str, kind: LyricsKind) -> Result<Option<String>, LyricsError> {
+        let path = self.lrc_path(track_id, kind);
+
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        let text = fs::read_to_string(&path)
+            .map_err(|e| LyricsError::new(format!("failed to read lyrics cache: {e}")))?;
+
+        Ok(Some(text))
     }
 }
 
@@ -102,4 +104,29 @@ fn resolve_library_mount() -> Result<String, LyricsError> {
         .map_err(|e| LyricsError::new(format!("failed to persist library ID: {e}")))?;
 
     Ok(chosen.mount_point.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_kind_subdir() {
+        assert_eq!(LyricsKind::Synchronized.subdir(), "synchronized");
+        assert_eq!(LyricsKind::Plain.subdir(), "plain");
+    }
+
+    #[test]
+    fn test_lrc_path_structure() {
+        let storage = LyricsStorage {
+            lyrics_dir: std::path::PathBuf::from("/music/_lyrics"),
+        };
+
+        let path = storage.lrc_path("track123", LyricsKind::Plain);
+
+        assert_eq!(
+            path,
+            std::path::PathBuf::from("/music/_lyrics/plain/track123.lrc")
+        );
+    }
 }

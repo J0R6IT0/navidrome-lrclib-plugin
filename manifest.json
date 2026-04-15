@@ -25,10 +25,28 @@
     "schema": {
       "type": "object",
       "properties": {
-        "fetchSyncedLyrics": {
-          "type": "boolean",
-          "title": "Fetch synchronized lyrics",
-          "default": true
+        "lyricsMode": {
+          "type": "string",
+          "title": "Lyrics mode",
+          "default": "both_prioritize_synced",
+          "oneOf": [
+            {
+              "const": "both_prioritize_synced",
+              "title": "Both (prioritize synchronized)"
+            },
+            {
+              "const": "both_prioritize_plain",
+              "title": "Both (prioritize plain)"
+            },
+            {
+              "const": "synced_only",
+              "title": "Synchronized only"
+            },
+            {
+              "const": "plain_only",
+              "title": "Plain only"
+            }
+          ]
         },
         "enableCache": {
           "type": "boolean",
@@ -53,7 +71,10 @@
       "elements": [
         {
           "type": "Control",
-          "scope": "#/properties/fetchSyncedLyrics"
+          "scope": "#/properties/lyricsMode",
+          "options": {
+            "format": "radio"
+          }
         },
         {
           "type": "Control",
