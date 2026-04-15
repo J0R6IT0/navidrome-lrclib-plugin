@@ -1,7 +1,7 @@
 {
   "name": "LRCLIB",
   "author": "Jorge Pardo",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Fetch lyrics from LRCLIB",
   "website": "https://github.com/J0R6IT0/navidrome-lrclib-plugin",
   "permissions": {

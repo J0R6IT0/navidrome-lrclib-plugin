@@ -10,7 +10,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 const USER_AGENT: &str =
-    "navidrome-lrclib-plugin/2.0.0 (https://github.com/J0R6IT0/navidrome-lrclib-plugin)";
+    "navidrome-lrclib-plugin/2.1.0 (https://github.com/J0R6IT0/navidrome-lrclib-plugin)";
 const BASE_URL: &str = "https://lrclib.net/api";
 
 #[derive(Debug, Deserialize)]
