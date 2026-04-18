@@ -14,7 +14,7 @@ Features:
 
 \*Due to API limitations, .lrc files are written inside a folder called `_lyrics` at the root of the selected library.
 
-## Instalation
+## Installation
 
 Make sure your Navidrome version is greater than `v0.61.0`.
 
