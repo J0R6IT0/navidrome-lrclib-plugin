@@ -14,7 +14,7 @@ Simple Navidrome plugin to fetch lyrics from [lrclib.net](https://lrclib.net/).
 
 ## Installation
 
-Make sure your Navidrome version is greater than `v0.61.0`.
+Make sure your Navidrome version is at least `v0.61.2`.
 
 1. Download the latest `lrclib-lyrics.ndp` from the Releases page and place it in your plugins folder.
 2. Add `lrclib-lyrics` to the `LyricsPriority` config option. See [here](https://www.navidrome.org/docs/usage/configuration/options/#:~:text=true-,LyricsPriority,-ND_LYRICSPRIORITY).
