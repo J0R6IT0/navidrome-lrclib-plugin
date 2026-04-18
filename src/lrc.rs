@@ -1,4 +1,3 @@
-use extism_pdk::warn;
 use nd_pdk::{
     host::library,
     lyrics::{Error as LyricsError, TrackInfo},
@@ -9,6 +8,10 @@ use std::{
 };
 
 pub fn write(track: &TrackInfo, text: &str, update: bool) -> Result<(), LyricsError> {
+    if track.path.is_empty() {
+        return Err(LyricsError::new("track path is empty"));
+    }
+
     if let Some(mut path) = resolve_track_path(track)? {
         path.set_extension("lrc");
 
@@ -18,11 +21,11 @@ pub fn write(track: &TrackInfo, text: &str, update: bool) -> Result<(), LyricsEr
 
         fs::write(&path, text.as_bytes())
             .map_err(|e| LyricsError::new(format!("failed to write lyrics file: {e}")))?;
-    } else {
-        warn!("could not resolve track path!")
-    }
 
-    Ok(())
+        Ok(())
+    } else {
+        Err(LyricsError::new("could not resolve track path!"))
+    }
 }
 
 fn resolve_track_path(track: &TrackInfo) -> Result<Option<PathBuf>, LyricsError> {
