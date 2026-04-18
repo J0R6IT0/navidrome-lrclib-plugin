@@ -5,12 +5,11 @@ use lrclib::fetch_lyrics_text;
 use nd_pdk::lyrics::{
     Error as LyricsError, GetLyricsRequest, GetLyricsResponse, Lyrics, LyricsText,
 };
-use storage::LyricsStorage;
 
 mod cache;
 mod config;
+mod lrc;
 mod lrclib;
-mod storage;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LyricsKind {
@@ -29,7 +28,6 @@ impl Lyrics for Plugin {
         let cfg = PluginConfig::load()?;
 
         let cache = cfg.enable_cache.then(|| LyricsCache::new(cfg.cache_ttl));
-        let storage = cfg.write_lyrics.then(|| LyricsStorage::new()).transpose()?;
 
         if let Some(ref cache) = cache {
             if let Some(cached) = cache.read(&track.id, cfg.lyrics_mode) {
@@ -37,17 +35,11 @@ impl Lyrics for Plugin {
             }
         }
 
-        if let Some(ref storage) = storage {
-            if let Some(stored) = storage.read(&track.id, cfg.lyrics_mode)? {
-                return Ok(make_response(stored));
-            }
-        }
+        let (text, kind): (String, LyricsKind) = fetch_lyrics_text(&track, cfg.lyrics_mode)?
+            .ok_or_else(|| LyricsError::new("no lyrics found"))?;
 
-        let (text, kind): (String, LyricsKind) =
-            fetch_lyrics_text(&track, &cfg)?.ok_or_else(|| LyricsError::new("no lyrics found"))?;
-
-        if let Some(ref storage) = storage {
-            let result = storage.write(&track.id, &text, kind);
+        if cfg.write_lyrics {
+            let result = lrc::write(&track, &text, cfg.update_lyrics);
             if result.is_err() {
                 warn!("failed to write .lrc file");
             }

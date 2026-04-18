@@ -1,7 +1,4 @@
-use crate::{
-    LyricsKind,
-    config::{LyricsMode, PluginConfig},
-};
+use crate::{LyricsKind, config::LyricsMode};
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
     lyrics::{Error as LyricsError, TrackInfo},
@@ -10,7 +7,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 const USER_AGENT: &str =
-    "navidrome-lrclib-plugin/2.1.0 (https://github.com/J0R6IT0/navidrome-lrclib-plugin)";
+    "navidrome-lrclib-plugin/3.0.0 (https://github.com/J0R6IT0/navidrome-lrclib-plugin)";
 const BASE_URL: &str = "https://lrclib.net/api";
 
 #[derive(Debug, Deserialize)]
@@ -25,7 +22,7 @@ struct LyricsRecord {
 
 pub fn fetch_lyrics_text(
     track: &TrackInfo,
-    cfg: &PluginConfig,
+    lyrics_mode: LyricsMode,
 ) -> Result<Option<(String, LyricsKind)>, LyricsError> {
     let first_artist = track
         .artists
@@ -45,14 +42,14 @@ pub fn fetch_lyrics_text(
 
     if let Some(record) = get_by_metadata(&all_artists, &track.title, &track.album, &duration_str)?
     {
-        if let Some(result) = pick_text(record, cfg.lyrics_mode) {
+        if let Some(result) = pick_text(record, lyrics_mode) {
             return Ok(Some(result));
         }
     }
 
     let query = format!("{} {}", first_artist, track.title);
     if let Some(record) = search_by_query(&query, track.duration)? {
-        if let Some(result) = pick_text(record, cfg.lyrics_mode) {
+        if let Some(result) = pick_text(record, lyrics_mode) {
             return Ok(Some(result));
         }
     }
@@ -118,7 +115,7 @@ fn send_request(url: &str) -> Result<HTTPResponse, LyricsError> {
         headers,
         no_follow_redirects: false,
         body: Vec::new(),
-        timeout_ms: 10_000,
+        timeout_ms: 15_000,
     })
     .map_err(|e| LyricsError::new(e.to_string()))?
     .ok_or_else(|| LyricsError::new("empty HTTP response"))

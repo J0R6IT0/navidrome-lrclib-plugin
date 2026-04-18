@@ -1,7 +1,7 @@
 {
   "name": "LRCLIB",
   "author": "Jorge Pardo",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "Fetch lyrics from LRCLIB",
   "website": "https://github.com/J0R6IT0/navidrome-lrclib-plugin",
   "permissions": {
@@ -12,10 +12,6 @@
     "library": {
       "reason": "To save lyrics as .lrc files",
       "filesystem": true
-    },
-    "kvstore": {
-      "reason": "To store plugin state",
-      "maxSize": "1KB"
     },
     "cache": {
       "reason": "To cache lyrics."
@@ -63,6 +59,11 @@
           "type": "boolean",
           "title": "Write lyrics to .lrc files",
           "default": false
+        },
+        "updateLyrics": {
+          "type": "boolean",
+          "title": "Update existing .lrc files",
+          "default": false
         }
       }
     },
@@ -97,7 +98,18 @@
         },
         {
           "type": "Label",
-          "text": "NOTE: Your music library must be mounted with write access and the plugin must have permission to write files. Because of API limitations, the plugin will create a _lyrics folder at the root of the selected music library to store and read lyric files"
+          "text": "NOTE: Your music library must be mounted with write access and the plugin must have permission to write files."
+        },
+        {
+          "type": "Control",
+          "scope": "#/properties/updateLyrics",
+          "rule": {
+            "effect": "SHOW",
+            "condition": {
+              "scope": "#/properties/writeLyrics",
+              "schema": { "const": true }
+            }
+          }
         }
       ]
     }

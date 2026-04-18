@@ -33,6 +33,7 @@ impl LyricsMode {
 pub struct PluginConfig {
     pub lyrics_mode: LyricsMode,
     pub write_lyrics: bool,
+    pub update_lyrics: bool,
     pub enable_cache: bool,
     pub cache_ttl: i64,
 }
@@ -45,6 +46,7 @@ impl PluginConfig {
                 .unwrap_or(LyricsMode::BothPreferSynced),
 
             write_lyrics: get_bool("writeLyrics", false)?,
+            update_lyrics: get_bool("updateLyrics", false)?,
             enable_cache: get_bool("enableCache", true)?,
             cache_ttl: get_i64("cacheTtl", 0)?,
         })
