@@ -19,7 +19,7 @@ Make sure your Navidrome version is at least `v0.61.2`.
 1. Download the latest `lrclib-lyrics.ndp` from the Releases page and place it in your plugins folder.
 2. Add `lrclib-lyrics` to the `LyricsPriority` config option. See [here](https://www.navidrome.org/docs/usage/configuration/options/#:~:text=true-,LyricsPriority,-ND_LYRICSPRIORITY).
 
-TIP: If you are using the "Write lyrics to .lrc files" functions, you can do `".lrc,lrclib-lyrics,<others...>"` so Navidrome reads the files
+TIP: If you are using the "Write lyrics to .lrc files" option, you can do `".lrc,lrclib-lyrics,<others...>"` so Navidrome reads the files
 directly when available.
 
 
