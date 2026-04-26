@@ -1,16 +1,16 @@
-## Navidrome LRCLIB Plugin
+# Navidrome LRCLIB Lyrics Plugin
 
-Simple Navidrome plugin to fetch lyrics from [lrclib.net](https://lrclib.net/).
+A Navidrome plugin to fetch lyrics from [lrclib.net](https://lrclib.net/).
 
 > [!IMPORTANT]
 > The Navidrome WebUI does not display lyrics from plugins at the moment, you need a third party client in order to see them.
 
-## Features:
+## Features
 
-- Choose between synced and plain lyrics
-- Fallback to search endpoint when direct lookup fails
-- Cache lyrics in memory for a selected period of time
-- Save lyrics as .lrc files.
+- Multiple lyrics modes: Plain, synchronized, or both combined.
+- Flexible search system that tries both direct lookup and search.
+- In-memory caching of lyrics for a configurable duration.
+- Option to save lyrics as `.lrc` files.
 
 ## Installation
 
