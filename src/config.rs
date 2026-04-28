@@ -1,6 +1,6 @@
-use nd_pdk::{host::config, lyrics::Error as LyricsError};
-
 use crate::LyricsKind;
+use nd_pdk::{host::config, lyrics::Error as LyricsError};
+use std::fmt;
 
 #[derive(Debug, Clone, Copy)]
 pub enum LyricsMode {
@@ -8,6 +8,21 @@ pub enum LyricsMode {
     BothPreferPlain,
     SyncedOnly,
     PlainOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LyricsProviderId {
+    Lrclib,
+    LyricsOvh,
+}
+
+impl fmt::Display for LyricsProviderId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LyricsProviderId::Lrclib => write!(f, "lrclib"),
+            LyricsProviderId::LyricsOvh => write!(f, "lyricsovh"),
+        }
+    }
 }
 
 impl LyricsMode {
@@ -36,10 +51,13 @@ pub struct PluginConfig {
     pub update_lyrics: bool,
     pub enable_cache: bool,
     pub cache_ttl: i64,
+    pub providers: Vec<LyricsProviderId>,
 }
 
 impl PluginConfig {
     pub fn load() -> Result<Self, LyricsError> {
+        let use_lyricsovh = get_bool("lyricsovh", false)?;
+
         Ok(Self {
             lyrics_mode: get_string("lyricsMode")?
                 .map(|s| LyricsMode::from_str(&s))
@@ -49,6 +67,11 @@ impl PluginConfig {
             update_lyrics: get_bool("updateLyrics", false)?,
             enable_cache: get_bool("enableCache", true)?,
             cache_ttl: get_i64("cacheTtl", 0)?,
+            providers: if use_lyricsovh {
+                vec![LyricsProviderId::Lrclib, LyricsProviderId::LyricsOvh]
+            } else {
+                vec![LyricsProviderId::Lrclib]
+            },
         })
     }
 }

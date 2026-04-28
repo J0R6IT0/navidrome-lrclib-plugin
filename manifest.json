@@ -1,13 +1,13 @@
 {
   "name": "LRCLIB",
   "author": "Jorge Pardo",
-  "version": "3.0.1",
+  "version": "4.0.0",
   "description": "Fetch lyrics from LRCLIB",
   "website": "https://github.com/J0R6IT0/navidrome-lrclib-plugin",
   "permissions": {
     "http": {
       "reason": "To fetch lyrics from the internet",
-      "requiredHosts": ["lrclib.net"]
+      "requiredHosts": ["lrclib.net", "api.lyrics.ovh"]
     },
     "library": {
       "reason": "To save lyrics as .lrc files",
@@ -44,6 +44,11 @@
             }
           ]
         },
+        "lyricsovh": {
+          "type": "boolean",
+          "title": "Fallback to lyrics.ovh (plain)",
+          "default": true
+        },
         "enableCache": {
           "type": "boolean",
           "title": "Cache lyrics in memory (compressed)",
@@ -75,6 +80,17 @@
           "scope": "#/properties/lyricsMode",
           "options": {
             "format": "radio"
+          }
+        },
+        {
+          "type": "Control",
+          "scope": "#/properties/lyricsovh",
+          "rule": {
+            "effect": "HIDE",
+            "condition": {
+              "scope": "#/properties/lyricsMode",
+              "schema": { "const": "synced_only" }
+            }
           }
         },
         {

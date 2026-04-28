@@ -222,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "navidrome-lrclib-plugin"
-version = "3.0.1"
+version = "4.0.0"
 dependencies = [
  "extism-pdk",
  "flate2",
