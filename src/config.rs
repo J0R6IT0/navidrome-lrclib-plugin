@@ -66,7 +66,7 @@ impl PluginConfig {
             write_lyrics: get_bool("writeLyrics", false)?,
             update_lyrics: get_bool("updateLyrics", false)?,
             enable_cache: get_bool("enableCache", true)?,
-            cache_ttl: get_i64("cacheTtl", 0)?,
+            cache_ttl: get_i64("cacheTtl", 86400)?,
             providers: if use_lyricsovh {
                 vec![LyricsProviderId::Lrclib, LyricsProviderId::LyricsOvh]
             } else {

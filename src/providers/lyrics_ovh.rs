@@ -7,6 +7,7 @@ use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
     lyrics::{Error, TrackInfo},
 };
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -40,7 +41,13 @@ impl LyricsProvider for LyricsOvhProvider {
             .name
             .as_str();
 
-        let raw = send_request(&format!("{}/{}/{}", BASE_URL, first_artist, track.title))?;
+        let encoded_artist = utf8_percent_encode(first_artist, NON_ALPHANUMERIC).to_string();
+        let encoded_title = utf8_percent_encode(&track.title, NON_ALPHANUMERIC).to_string();
+
+        let raw = send_request(&format!(
+            "{}/{}/{}",
+            BASE_URL, encoded_artist, encoded_title
+        ))?;
 
         if raw.status_code != 200 {
             return Err(Error::new(format!(

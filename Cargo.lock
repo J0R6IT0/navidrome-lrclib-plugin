@@ -227,6 +227,7 @@ dependencies = [
  "extism-pdk",
  "flate2",
  "nd-pdk",
+ "percent-encoding",
  "serde",
  "serde_json",
  "serde_urlencoded",
