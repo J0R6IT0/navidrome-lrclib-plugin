@@ -9,6 +9,7 @@ A Navidrome plugin to fetch lyrics from [lrclib.net](https://lrclib.net/).
 
 - Multiple lyrics modes: Plain, synchronized, or both combined.
 - Flexible search system that tries both direct lookup and search.
+- Fallback to [lyrics.ovh](https://lyrics.ovh/) if no lyrics are found.
 - In-memory caching of lyrics for a configurable duration.
 - Option to save lyrics as `.lrc` files.
 
@@ -21,6 +22,5 @@ Make sure your Navidrome version is at least `v0.61.2`.
 
 TIP: If you are using the "Write lyrics to .lrc files" option, you can do `".lrc,lrclib-lyrics,<others...>"` so Navidrome reads the files
 directly when available.
-
 
 3. You may need to restart Navidrome for the plugin to be detected.
