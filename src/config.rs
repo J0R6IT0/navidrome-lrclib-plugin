@@ -1,6 +1,5 @@
 use crate::LyricsKind;
 use nd_pdk::{host::config, lyrics::Error as LyricsError};
-use std::fmt;
 
 #[derive(Debug, Clone, Copy)]
 pub enum LyricsMode {
@@ -8,21 +7,6 @@ pub enum LyricsMode {
     BothPreferPlain,
     SyncedOnly,
     PlainOnly,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LyricsProviderId {
-    Lrclib,
-    LyricsOvh,
-}
-
-impl fmt::Display for LyricsProviderId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LyricsProviderId::Lrclib => write!(f, "lrclib"),
-            LyricsProviderId::LyricsOvh => write!(f, "lyricsovh"),
-        }
-    }
 }
 
 impl LyricsMode {
@@ -48,32 +32,39 @@ impl LyricsMode {
 pub struct PluginConfig {
     pub lyrics_mode: LyricsMode,
     pub write_lyrics: bool,
-    pub update_lyrics: bool,
+    pub overwrite_lyrics: bool,
+    pub plain_extension: String,
+    pub synced_extension: String,
     pub enable_cache: bool,
     pub cache_ttl: i64,
-    pub providers: Vec<LyricsProviderId>,
+    pub providers: Vec<String>,
 }
 
 impl PluginConfig {
     pub fn load() -> Result<Self, LyricsError> {
-        let use_lyricsovh = get_bool("lyricsovh", false)?;
-
         Ok(Self {
             lyrics_mode: get_string("lyricsMode")?
                 .map(|s| LyricsMode::from_str(&s))
                 .unwrap_or(LyricsMode::BothPreferSynced),
-
             write_lyrics: get_bool("writeLyrics", false)?,
-            update_lyrics: get_bool("updateLyrics", false)?,
+            overwrite_lyrics: get_bool("overwriteLyrics", false)?,
+            plain_extension: get_string("plainExtension")?
+                .map(|s| normalize_extension(&s))
+                .unwrap_or_else(|| "txt".to_string()),
+            synced_extension: get_string("syncedExtension")?
+                .map(|s| normalize_extension(&s))
+                .unwrap_or_else(|| "lrc".to_string()),
             enable_cache: get_bool("enableCache", true)?,
             cache_ttl: get_i64("cacheTtl", 86400)?,
-            providers: if use_lyricsovh {
-                vec![LyricsProviderId::Lrclib, LyricsProviderId::LyricsOvh]
-            } else {
-                vec![LyricsProviderId::Lrclib]
-            },
+            providers: get_string("providers")?
+                .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
+                .unwrap_or_default(),
         })
     }
+}
+
+fn normalize_extension(ext: &str) -> String {
+    ext.trim().trim_start_matches('.').to_string()
 }
 
 fn get_string(key: &str) -> Result<Option<String>, LyricsError> {
@@ -114,7 +105,6 @@ mod tests {
             LyricsMode::from_str("both_prioritize_synced"),
             LyricsMode::BothPreferSynced
         ));
-
         assert!(matches!(
             LyricsMode::from_str("unknown"),
             LyricsMode::BothPreferSynced
@@ -136,5 +126,14 @@ mod tests {
             &[LyricsKind::Synchronized]
         );
         assert_eq!(LyricsMode::PlainOnly.resolve_order(), &[LyricsKind::Plain]);
+    }
+
+    #[test]
+    fn test_normalize_extension() {
+        assert_eq!(normalize_extension("lrc"), "lrc");
+        assert_eq!(normalize_extension(".lrc"), "lrc");
+        assert_eq!(normalize_extension("...lrc"), "lrc");
+        assert_eq!(normalize_extension("  .txt  "), "txt");
+        assert_eq!(normalize_extension("."), "");
     }
 }

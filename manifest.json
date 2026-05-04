@@ -1,7 +1,7 @@
 {
   "name": "LRCLIB",
   "author": "Jorge Pardo",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "Fetch lyrics from LRCLIB",
   "website": "https://github.com/J0R6IT0/navidrome-lrclib-plugin",
   "permissions": {
@@ -44,10 +44,11 @@
             }
           ]
         },
-        "lyricsovh": {
-          "type": "boolean",
-          "title": "Fallback to lyrics.ovh (plain)",
-          "default": true
+        "providers": {
+          "type": "string",
+          "title": "Lyrics providers",
+          "default": "lrclib,lyrics.ovh",
+          "description": "Comma-separated list of providers to use, ordered by priority. See the GitHub page for available providers."
         },
         "enableCache": {
           "type": "boolean",
@@ -62,12 +63,24 @@
         },
         "writeLyrics": {
           "type": "boolean",
-          "title": "Write lyrics to .lrc files",
+          "title": "Write lyrics to files",
           "default": false
         },
-        "updateLyrics": {
+        "plainExtension": {
+          "type": "string",
+          "title": "Plain lyrics extension",
+          "default": "txt",
+          "description": "The file extension to use for plain lyrics files."
+        },
+        "syncedExtension": {
+          "type": "string",
+          "title": "Synchronized lyrics extension",
+          "default": "lrc",
+          "description": "The file extension to use for synchronized lyrics files."
+        },
+        "overwriteLyrics": {
           "type": "boolean",
-          "title": "Update existing .lrc files",
+          "title": "Overwrite existing lyrics files",
           "default": false
         }
       }
@@ -76,56 +89,87 @@
       "type": "VerticalLayout",
       "elements": [
         {
-          "type": "Control",
-          "scope": "#/properties/lyricsMode",
-          "options": {
-            "format": "radio"
-          }
-        },
-        {
-          "type": "Control",
-          "scope": "#/properties/lyricsovh",
-          "rule": {
-            "effect": "HIDE",
-            "condition": {
+          "type": "Group",
+          "label": "General",
+          "elements": [
+            {
+              "type": "Control",
               "scope": "#/properties/lyricsMode",
-              "schema": { "const": "synced_only" }
+              "options": {
+                "format": "radio"
+              }
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/providers"
             }
-          }
+          ]
         },
         {
-          "type": "Control",
-          "scope": "#/properties/enableCache"
-        },
-        {
-          "type": "Control",
-          "scope": "#/properties/cacheTtl",
-          "rule": {
-            "effect": "SHOW",
-            "condition": {
-              "scope": "#/properties/enableCache",
-              "schema": { "const": true }
+          "type": "Group",
+          "label": "Cache",
+          "elements": [
+            {
+              "type": "Control",
+              "scope": "#/properties/enableCache"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/cacheTtl",
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#/properties/enableCache",
+                  "schema": { "const": true }
+                }
+              }
             }
-          }
+          ]
         },
         {
-          "type": "Control",
-          "scope": "#/properties/writeLyrics"
-        },
-        {
-          "type": "Label",
-          "text": "NOTE: Your music library must be mounted with write access and the plugin must have permission to write files."
-        },
-        {
-          "type": "Control",
-          "scope": "#/properties/updateLyrics",
-          "rule": {
-            "effect": "SHOW",
-            "condition": {
-              "scope": "#/properties/writeLyrics",
-              "schema": { "const": true }
+          "type": "Group",
+          "label": "File Writing",
+          "elements": [
+            {
+              "type": "Label",
+              "text": "NOTE: Your music library must be mounted with write access and the plugin must have permission to write files."
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/writeLyrics"
+            },
+            {
+              "type": "HorizontalLayout",
+              "elements": [
+                {
+                  "type": "Control",
+                  "scope": "#/properties/plainExtension"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/syncedExtension"
+                }
+              ],
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#/properties/writeLyrics",
+                  "schema": { "const": true }
+                }
+              }
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/overwriteLyrics",
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#/properties/writeLyrics",
+                  "schema": { "const": true }
+                }
+              }
             }
-          }
+          ]
         }
       ]
     }

@@ -2,20 +2,22 @@ use nd_pdk::{
     host::library,
     lyrics::{Error as LyricsError, TrackInfo},
 };
-use std::{
-    fs::{self},
-    path::PathBuf,
-};
+use std::{fs, path::PathBuf};
 
-pub fn write(track: &TrackInfo, text: &str, update: bool) -> Result<(), LyricsError> {
+pub fn write(
+    track: &TrackInfo,
+    text: &str,
+    extension: &str,
+    overwrite: bool,
+) -> Result<(), LyricsError> {
     if track.path.is_empty() {
         return Err(LyricsError::new("track path is empty"));
     }
 
     if let Some(mut path) = resolve_track_path(track)? {
-        path.set_extension("lrc");
+        path.set_extension(extension);
 
-        if path.exists() && !update {
+        if path.exists() && !overwrite {
             return Ok(());
         }
 

@@ -7,9 +7,9 @@ use nd_pdk::lyrics::{
 
 mod cache;
 mod config;
-mod lrc;
 mod providers;
 mod registry;
+mod writing;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LyricsKind {
@@ -29,7 +29,6 @@ impl Lyrics for Plugin {
 
         let track = req.track;
         let cfg = PluginConfig::load()?;
-
         let cache = cfg.enable_cache.then(|| LyricsCache::new(cfg.cache_ttl));
 
         if let Some(ref cache) = cache {
@@ -58,12 +57,16 @@ impl Lyrics for Plugin {
             };
 
             if cfg.write_lyrics {
-                if lrc::write(&track, &text, cfg.update_lyrics).is_err() {
-                    warn!("failed to write .lrc file");
+                let extension = match kind {
+                    LyricsKind::Synchronized => &cfg.synced_extension,
+                    LyricsKind::Plain => &cfg.plain_extension,
+                };
+                if writing::write(&track, &text, extension, cfg.overwrite_lyrics).is_err() {
+                    warn!("failed to write lyrics file");
                 }
             }
 
-            if let Some(cache) = &cache {
+            if let Some(ref cache) = cache {
                 if cache.write(&track.id, &text, kind).is_err() {
                     warn!("failed to write to cache");
                 }

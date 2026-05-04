@@ -1,6 +1,6 @@
 use crate::{
     LyricsKind,
-    config::{LyricsMode, LyricsProviderId},
+    config::LyricsMode,
     providers::{LyricsProvider, USER_AGENT},
 };
 use nd_pdk::{
@@ -22,11 +22,11 @@ struct LyricsRecord {
     instrumental: bool,
 }
 
-pub struct LrclibProvider;
+pub struct Lrclib;
 
-impl LyricsProvider for LrclibProvider {
-    fn id(&self) -> LyricsProviderId {
-        LyricsProviderId::Lrclib
+impl LyricsProvider for Lrclib {
+    fn id(&self) -> &'static str {
+        "lrclib"
     }
 
     fn fetch_lyrics(

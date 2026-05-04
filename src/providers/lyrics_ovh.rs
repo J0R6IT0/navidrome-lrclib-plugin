@@ -1,6 +1,6 @@
 use crate::{
     LyricsKind,
-    config::{LyricsMode, LyricsProviderId},
+    config::LyricsMode,
     providers::{LyricsProvider, USER_AGENT},
 };
 use nd_pdk::{
@@ -18,11 +18,11 @@ struct Response {
     lyrics: String,
 }
 
-pub struct LyricsOvhProvider;
+pub struct LyricsOvh;
 
-impl LyricsProvider for LyricsOvhProvider {
-    fn id(&self) -> LyricsProviderId {
-        LyricsProviderId::LyricsOvh
+impl LyricsProvider for LyricsOvh {
+    fn id(&self) -> &'static str {
+        "lyrics.ovh"
     }
 
     fn fetch_lyrics(

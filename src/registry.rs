@@ -1,8 +1,8 @@
-use crate::{config::LyricsProviderId, providers::LyricsProvider};
+use crate::providers::LyricsProvider;
 use std::collections::HashMap;
 
 pub struct ProviderRegistry {
-    providers: HashMap<LyricsProviderId, Box<dyn LyricsProvider>>,
+    providers: HashMap<&'static str, Box<dyn LyricsProvider>>,
 }
 
 impl ProviderRegistry {
@@ -16,7 +16,7 @@ impl ProviderRegistry {
         self.providers.insert(provider.id(), provider);
     }
 
-    pub fn get(&self, id: &LyricsProviderId) -> Option<&Box<dyn LyricsProvider>> {
+    pub fn get(&self, id: &str) -> Option<&Box<dyn LyricsProvider>> {
         self.providers.get(id)
     }
 }

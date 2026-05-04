@@ -1,7 +1,7 @@
 use crate::{
     LyricsKind,
-    config::{LyricsMode, LyricsProviderId},
-    providers::{lrclib::LrclibProvider, lyrics_ovh::LyricsOvhProvider},
+    config::LyricsMode,
+    providers::{lrclib::Lrclib, lyrics_ovh::LyricsOvh},
     registry::ProviderRegistry,
 };
 use nd_pdk::lyrics::{Error, TrackInfo};
@@ -10,15 +10,15 @@ mod lrclib;
 mod lyrics_ovh;
 
 const USER_AGENT: &str =
-    "navidrome-lrclib-plugin/4.0.0 (https://github.com/J0R6IT0/navidrome-lrclib-plugin)";
+    "navidrome-lrclib-plugin/5.0.0 (https://github.com/J0R6IT0/navidrome-lrclib-plugin)";
 
 pub fn register_providers(registry: &mut ProviderRegistry) {
-    registry.register(Box::new(LrclibProvider));
-    registry.register(Box::new(LyricsOvhProvider));
+    registry.register(Box::new(Lrclib));
+    registry.register(Box::new(LyricsOvh));
 }
 
 pub trait LyricsProvider {
-    fn id(&self) -> LyricsProviderId;
+    fn id(&self) -> &'static str;
     fn fetch_lyrics(
         &self,
         track: &TrackInfo,
