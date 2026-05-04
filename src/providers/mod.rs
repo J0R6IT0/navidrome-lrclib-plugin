@@ -1,13 +1,13 @@
 use crate::{
     LyricsKind,
     config::LyricsMode,
-    providers::{lrclib::Lrclib, lyrics_ovh::LyricsOvh},
+    providers::{lrclib::Lrclib, lyricsovh::LyricsOvh},
     registry::ProviderRegistry,
 };
 use nd_pdk::lyrics::{Error, TrackInfo};
 
 mod lrclib;
-mod lyrics_ovh;
+mod lyricsovh;
 
 const USER_AGENT: &str =
     "navidrome-lrclib-plugin/5.0.0 (https://github.com/J0R6IT0/navidrome-lrclib-plugin)";

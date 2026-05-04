@@ -13,13 +13,6 @@ A Navidrome plugin to fetch lyrics from [lrclib.net](https://lrclib.net/).
 - In-memory caching of lyrics for a configurable duration.
 - Option to save lyrics as `.lrc` files.
 
-## Available providers
-
-| Provider   | Mode           |
-|------------|----------------|
-| lrclib     | plain + synced |
-| lyrics.ovh | plain          |
-
 ## Installation
 
 Make sure your Navidrome version is at least `v0.61.2`.
