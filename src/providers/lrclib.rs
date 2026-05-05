@@ -1,7 +1,7 @@
 use crate::{
-    LyricsKind,
-    config::LyricsMode,
+    config::PluginConfig,
     providers::{LyricsProvider, USER_AGENT},
+    types::LyricsType,
 };
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
@@ -11,10 +11,11 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 const BASE_URL: &str = "https://lrclib.net/api";
+const DURATION_TOLERANCE_SECS: f32 = 2.0;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct LyricsRecord {
+struct LrclibRecord {
     synced_lyrics: Option<String>,
     plain_lyrics: Option<String>,
     duration: Option<f32>,
@@ -32,8 +33,8 @@ impl LyricsProvider for Lrclib {
     fn fetch_lyrics(
         &self,
         track: &TrackInfo,
-        lyrics_mode: LyricsMode,
-    ) -> Result<Option<(String, LyricsKind)>, LyricsError> {
+        cfg: &PluginConfig,
+    ) -> Result<Option<(String, LyricsType)>, LyricsError> {
         let first_artist = track
             .artists
             .first()
@@ -48,21 +49,18 @@ impl LyricsProvider for Lrclib {
             .collect::<Vec<_>>()
             .join(" ");
 
-        let duration_str = track.duration.round().to_string();
-
         if let Some(record) =
-            get_by_metadata(&all_artists, &track.title, &track.album, &duration_str)?
+            get_by_metadata(&all_artists, &track.title, &track.album, track.duration)?
+            && let Some(result) = pick_text(record, cfg)
         {
-            if let Some(result) = pick_text(record, lyrics_mode) {
-                return Ok(Some(result));
-            }
+            return Ok(Some(result));
         }
 
-        let query = format!("{} {}", first_artist, track.title);
-        if let Some(record) = search_by_query(&query, track.duration)? {
-            if let Some(result) = pick_text(record, lyrics_mode) {
-                return Ok(Some(result));
-            }
+        let query = format!("{first_artist} {}", track.title);
+        if let Some(record) = search_by_query(&query, track.duration)?
+            && let Some(result) = pick_text(record, cfg)
+        {
+            return Ok(Some(result));
         }
 
         Ok(None)
@@ -73,46 +71,48 @@ fn get_by_metadata(
     artist: &str,
     title: &str,
     album: &str,
-    duration: &str,
-) -> Result<Option<LyricsRecord>, LyricsError> {
+    duration: f32,
+) -> Result<Option<LrclibRecord>, LyricsError> {
     let query = serde_urlencoded::to_string([
         ("artist_name", artist),
         ("track_name", title),
         ("album_name", album),
-        ("duration", duration),
+        ("duration", &duration.round().to_string()),
     ])
-    .map_err(|e| LyricsError::new(e.to_string()))?;
+    .map_err(|e| LyricsError::new(format!("lrclib: failed to encode query: {e}")))?;
 
-    let response = send_request(&format!("{}/get?{}", BASE_URL, query))?;
+    let response = send_request(&format!("{}/get?{query}", BASE_URL))?;
 
     match response.status_code {
         200 => serde_json::from_slice(&response.body)
             .map(Some)
-            .map_err(|e| LyricsError::new(e.to_string())),
+            .map_err(|e| LyricsError::new(format!("lrclib: failed to parse get response: {e}"))),
         404 => Ok(None),
-        code => Err(LyricsError::new(format!("lrclib returned status {}", code))),
+        code => Err(LyricsError::new(format!(
+            "lrclib: get endpoint returned status {code}"
+        ))),
     }
 }
 
-fn search_by_query(q: &str, duration: f32) -> Result<Option<LyricsRecord>, LyricsError> {
-    let query =
-        serde_urlencoded::to_string([("q", q)]).map_err(|e| LyricsError::new(e.to_string()))?;
+fn search_by_query(q: &str, target_duration: f32) -> Result<Option<LrclibRecord>, LyricsError> {
+    let query = serde_urlencoded::to_string([("q", q)])
+        .map_err(|e| LyricsError::new(format!("lrclib: failed to encode search query: {e}")))?;
 
-    let response = send_request(&format!("{}/search?{}", BASE_URL, query))?;
+    let response = send_request(&format!("{}/search?{query}", BASE_URL))?;
 
     if response.status_code != 200 {
         return Err(LyricsError::new(format!(
-            "lrclib search returned status {}",
+            "lrclib: search endpoint returned status {}",
             response.status_code
         )));
     }
 
-    let records: Vec<LyricsRecord> =
-        serde_json::from_slice(&response.body).map_err(|e| LyricsError::new(e.to_string()))?;
+    let records: Vec<LrclibRecord> = serde_json::from_slice(&response.body)
+        .map_err(|e| LyricsError::new(format!("lrclib: failed to parse search response: {e}")))?;
 
     Ok(records.into_iter().find(|r| {
         r.duration
-            .map(|d| (d - duration).abs() <= 2.0)
+            .map(|d| (d - target_duration).abs() <= DURATION_TOLERANCE_SECS)
             .unwrap_or(false)
     }))
 }
@@ -129,108 +129,122 @@ fn send_request(url: &str) -> Result<HTTPResponse, LyricsError> {
         body: Vec::new(),
         timeout_ms: 15_000,
     })
-    .map_err(|e| LyricsError::new(e.to_string()))?
-    .ok_or_else(|| LyricsError::new("empty HTTP response"))
+    .map_err(|e| LyricsError::new(format!("lrclib: HTTP request failed: {e}")))?
+    .ok_or_else(|| LyricsError::new("lrclib: received empty HTTP response"))
 }
 
-fn pick_text(record: LyricsRecord, mode: LyricsMode) -> Option<(String, LyricsKind)> {
+fn pick_text(record: LrclibRecord, cfg: &PluginConfig) -> Option<(String, LyricsType)> {
     if record.instrumental {
-        return Some(("Instrumental".to_string(), LyricsKind::Plain));
+        return Some(("Instrumental".to_string(), LyricsType::Plain));
     }
 
     let synced = record.synced_lyrics.filter(|s| !s.trim().is_empty());
     let plain = record.plain_lyrics.filter(|s| !s.trim().is_empty());
 
-    match mode {
-        LyricsMode::BothPreferSynced => synced
-            .map(|t| (t, LyricsKind::Synchronized))
-            .or_else(|| plain.map(|t| (t, LyricsKind::Plain))),
-        LyricsMode::BothPreferPlain => plain
-            .map(|t| (t, LyricsKind::Plain))
-            .or_else(|| synced.map(|t| (t, LyricsKind::Synchronized))),
-        LyricsMode::SyncedOnly => synced.map(|t| (t, LyricsKind::Synchronized)),
-        LyricsMode::PlainOnly => plain.map(|t| (t, LyricsKind::Plain)),
+    for &kind in cfg.resolve_order() {
+        let text = match kind {
+            LyricsType::Synced => synced.as_ref(),
+            LyricsType::Plain => plain.as_ref(),
+        };
+
+        if let Some(text) = text {
+            return Some((text.clone(), kind));
+        }
     }
+
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn record(synced: Option<&str>, plain: Option<&str>, instrumental: bool) -> LyricsRecord {
-        LyricsRecord {
-            synced_lyrics: synced.map(|s| s.to_string()),
-            plain_lyrics: plain.map(|s| s.to_string()),
-            duration: Some(200.0),
-            instrumental,
+    fn make_config(priority: Vec<LyricsType>) -> PluginConfig {
+        PluginConfig {
+            lyrics_type_priority: priority,
+            write_lyrics: false,
+            overwrite_lyrics: false,
+            plain_extension: "txt".to_string(),
+            synced_extension: "lrc".to_string(),
+            enable_cache: true,
+            cache_ttl: 60,
+            providers: vec![],
         }
     }
 
     #[test]
-    fn test_pick_text_synced_only() {
-        let r = record(Some("SYNC"), Some("PLAIN"), false);
-
-        let res = pick_text(r, LyricsMode::SyncedOnly);
-
-        assert_eq!(res, Some(("SYNC".to_string(), LyricsKind::Synchronized)));
-    }
-
-    #[test]
-    fn test_pick_text_plain_only() {
-        let r = record(Some("SYNC"), Some("PLAIN"), false);
-
-        let res = pick_text(r, LyricsMode::PlainOnly);
-
-        assert_eq!(res, Some(("PLAIN".to_string(), LyricsKind::Plain)));
-    }
-
-    #[test]
-    fn test_pick_text_both_prefer_synced() {
-        let r = record(Some("SYNC"), Some("PLAIN"), false);
-
-        let res = pick_text(r, LyricsMode::BothPreferSynced);
-
-        assert_eq!(res, Some(("SYNC".to_string(), LyricsKind::Synchronized)));
-    }
-
-    #[test]
-    fn test_pick_text_fallback_to_plain() {
-        let r = record(None, Some("PLAIN"), false);
-
-        let res = pick_text(r, LyricsMode::BothPreferSynced);
-
-        assert_eq!(res, Some(("PLAIN".to_string(), LyricsKind::Plain)));
-    }
-
-    #[test]
-    fn test_pick_text_both_prefer_plain() {
-        let r = record(Some("SYNC"), Some("PLAIN"), false);
-
-        let res = pick_text(r, LyricsMode::BothPreferPlain);
-
-        assert_eq!(res, Some(("PLAIN".to_string(), LyricsKind::Plain)));
-    }
-
-    #[test]
-    fn test_pick_text_instrumental_overrides() {
-        let r = record(Some("SYNC"), Some("PLAIN"), true);
-
-        let res = pick_text(r, LyricsMode::SyncedOnly);
-
-        assert_eq!(res, Some(("Instrumental".to_string(), LyricsKind::Plain)));
-    }
-
-    #[test]
-    fn test_empty_strings_are_ignored() {
-        let r = LyricsRecord {
-            synced_lyrics: Some("".to_string()),
-            plain_lyrics: Some("  ".to_string()),
-            duration: Some(200.0),
+    fn test_pick_text_synced_priority() {
+        let cfg = make_config(vec![LyricsType::Synced, LyricsType::Plain]);
+        let record = LrclibRecord {
+            synced_lyrics: Some("[00:00.00] Hello".to_string()),
+            plain_lyrics: Some("Hello".to_string()),
+            duration: Some(180.0),
             instrumental: false,
         };
 
-        let res = pick_text(r, LyricsMode::BothPreferSynced);
+        let result = pick_text(record, &cfg);
+        assert_eq!(
+            result,
+            Some(("[00:00.00] Hello".to_string(), LyricsType::Synced))
+        );
+    }
 
-        assert_eq!(res, None);
+    #[test]
+    fn test_pick_text_falls_back_to_plain() {
+        let cfg = make_config(vec![LyricsType::Synced, LyricsType::Plain]);
+        let record = LrclibRecord {
+            synced_lyrics: None,
+            plain_lyrics: Some("Hello".to_string()),
+            duration: Some(180.0),
+            instrumental: false,
+        };
+
+        let result = pick_text(record, &cfg);
+        assert_eq!(result, Some(("Hello".to_string(), LyricsType::Plain)));
+    }
+
+    #[test]
+    fn test_pick_text_skips_empty_synced() {
+        let cfg = make_config(vec![LyricsType::Synced, LyricsType::Plain]);
+        let record = LrclibRecord {
+            synced_lyrics: Some("   ".to_string()), // whitespace only
+            plain_lyrics: Some("Hello".to_string()),
+            duration: Some(180.0),
+            instrumental: false,
+        };
+
+        let result = pick_text(record, &cfg);
+        assert_eq!(result, Some(("Hello".to_string(), LyricsType::Plain)));
+    }
+
+    #[test]
+    fn test_pick_text_instrumental() {
+        let cfg = make_config(vec![LyricsType::Synced, LyricsType::Plain]);
+        let record = LrclibRecord {
+            synced_lyrics: None,
+            plain_lyrics: None,
+            duration: Some(180.0),
+            instrumental: true,
+        };
+
+        let result = pick_text(record, &cfg);
+        assert_eq!(
+            result,
+            Some(("Instrumental".to_string(), LyricsType::Plain))
+        );
+    }
+
+    #[test]
+    fn test_pick_text_no_lyrics_available() {
+        let cfg = make_config(vec![LyricsType::Synced, LyricsType::Plain]);
+        let record = LrclibRecord {
+            synced_lyrics: None,
+            plain_lyrics: None,
+            duration: Some(180.0),
+            instrumental: false,
+        };
+
+        let result = pick_text(record, &cfg);
+        assert_eq!(result, None);
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
-    LyricsKind,
-    config::LyricsMode,
+    config::PluginConfig,
     providers::{LyricsProvider, USER_AGENT},
+    types::LyricsType,
 };
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
@@ -14,7 +14,7 @@ use std::collections::HashMap;
 const BASE_URL: &str = "https://api.lyrics.ovh/v1";
 
 #[derive(Debug, Deserialize)]
-struct Response {
+struct ApiResponse {
     lyrics: String,
 }
 
@@ -28,9 +28,9 @@ impl LyricsProvider for LyricsOvh {
     fn fetch_lyrics(
         &self,
         track: &TrackInfo,
-        lyrics_mode: LyricsMode,
-    ) -> Result<Option<(String, crate::LyricsKind)>, Error> {
-        if matches!(lyrics_mode, LyricsMode::SyncedOnly) {
+        cfg: &PluginConfig,
+    ) -> Result<Option<(String, LyricsType)>, Error> {
+        if !cfg.wants_plain() {
             return Ok(None);
         }
 
@@ -41,26 +41,31 @@ impl LyricsProvider for LyricsOvh {
             .name
             .as_str();
 
-        let encoded_artist = utf8_percent_encode(first_artist, NON_ALPHANUMERIC).to_string();
-        let encoded_title = utf8_percent_encode(&track.title, NON_ALPHANUMERIC).to_string();
+        let url = build_search_url(first_artist, &track.title);
+        let response = send_request(&url)?;
 
-        let raw = send_request(&format!(
-            "{}/{}/{}",
-            BASE_URL, encoded_artist, encoded_title
-        ))?;
+        if response.status_code == 404 {
+            return Ok(None);
+        }
 
-        if raw.status_code != 200 {
+        if response.status_code != 200 {
             return Err(Error::new(format!(
-                "lyrics.ovh search returned status {}",
-                raw.status_code
+                "lyrics.ovh returned unexpected status {}",
+                response.status_code
             )));
         }
 
-        let response: Response =
-            serde_json::from_slice(&raw.body).map_err(|e| Error::new(e.to_string()))?;
+        let body: ApiResponse = serde_json::from_slice(&response.body)
+            .map_err(|e| Error::new(format!("failed to parse lyrics.ovh response: {e}")))?;
 
-        Ok(Some((response.lyrics, LyricsKind::Plain)))
+        Ok(Some((body.lyrics, LyricsType::Plain)))
     }
+}
+
+fn build_search_url(artist: &str, title: &str) -> String {
+    let encoded_artist = utf8_percent_encode(artist, NON_ALPHANUMERIC).to_string();
+    let encoded_title = utf8_percent_encode(title, NON_ALPHANUMERIC).to_string();
+    format!("{BASE_URL}/{encoded_artist}/{encoded_title}")
 }
 
 fn send_request(url: &str) -> Result<HTTPResponse, Error> {
@@ -75,6 +80,29 @@ fn send_request(url: &str) -> Result<HTTPResponse, Error> {
         body: Vec::new(),
         timeout_ms: 15_000,
     })
-    .map_err(|e| Error::new(e.to_string()))?
-    .ok_or_else(|| Error::new("empty HTTP response"))
+    .map_err(|e| Error::new(format!("HTTP request to lyrics.ovh failed: {e}")))?
+    .ok_or_else(|| Error::new("received empty HTTP response from lyrics.ovh"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_search_url_simple() {
+        let url = build_search_url("The Beatles", "Hey Jude");
+        assert_eq!(url, "https://api.lyrics.ovh/v1/The%20Beatles/Hey%20Jude");
+    }
+
+    #[test]
+    fn test_build_search_url_special_chars() {
+        let url = build_search_url("AC/DC", "Back in Black");
+        assert_eq!(url, "https://api.lyrics.ovh/v1/AC%2FDC/Back%20in%20Black");
+    }
+
+    #[test]
+    fn test_build_search_url_unicode() {
+        let url = build_search_url("Björk", "Hyperballad");
+        assert_eq!(url, "https://api.lyrics.ovh/v1/Bj%C3%B6rk/Hyperballad");
+    }
 }

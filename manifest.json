@@ -4,6 +4,7 @@
   "version": "5.0.0",
   "description": "Fetch lyrics from LRCLIB",
   "website": "https://github.com/J0R6IT0/navidrome-lrclib-plugin",
+
   "permissions": {
     "http": {
       "reason": "To fetch lyrics from the internet",
@@ -17,94 +18,165 @@
       "reason": "To cache lyrics."
     }
   },
+
   "config": {
     "schema": {
       "type": "object",
       "properties": {
-        "lyricsMode": {
+        "lyricsSynced": {
+          "type": "boolean",
+          "title": "Synced lyrics",
+          "default": true,
+          "description": "Fetch time-synced lyrics."
+        },
+
+        "lyricsPlain": {
+          "type": "boolean",
+          "title": "Plain lyrics",
+          "default": true,
+          "description": "Fetch plain (non-synced) lyrics."
+        },
+
+        "lyricsPriority": {
           "type": "string",
-          "title": "Lyrics mode",
-          "default": "both_prioritize_synced",
+          "title": "Priority",
+          "description": "When both types are available, which one to return first.",
+          "default": "synced",
           "oneOf": [
             {
-              "const": "both_prioritize_synced",
-              "title": "Both (prioritize synchronized)"
+              "const": "synced",
+              "title": "Prefer synced"
             },
             {
-              "const": "both_prioritize_plain",
-              "title": "Both (prioritize plain)"
-            },
-            {
-              "const": "synced_only",
-              "title": "Synchronized only"
-            },
-            {
-              "const": "plain_only",
-              "title": "Plain only"
+              "const": "plain",
+              "title": "Prefer plain"
             }
           ]
         },
+
         "providers": {
           "type": "string",
           "title": "Lyrics providers",
           "default": "lrclib,lyrics.ovh",
           "description": "Comma-separated list of providers to use, ordered by priority. See the GitHub page for available providers."
         },
+
         "enableCache": {
           "type": "boolean",
-          "title": "Cache lyrics in memory (compressed)",
+          "title": "Enable lyrics cache",
           "default": true
         },
+
         "cacheTtl": {
-          "type": "number",
-          "title": "Cache TTL seconds",
+          "type": "integer",
+          "title": "Cache TTL (seconds)",
+          "minimum": 60,
           "default": 86400,
-          "description": "Time (in seconds) that cached lyrics remain valid."
+          "description": "How long cached lyrics remain valid. Default is 24 hours."
         },
+
         "writeLyrics": {
           "type": "boolean",
           "title": "Write lyrics to files",
           "default": false
         },
+
         "plainExtension": {
           "type": "string",
           "title": "Plain lyrics extension",
           "default": "txt",
-          "description": "The file extension to use for plain lyrics files."
+          "description": "File extension for plain lyrics files."
         },
+
         "syncedExtension": {
           "type": "string",
-          "title": "Synchronized lyrics extension",
+          "title": "Synced lyrics extension",
           "default": "lrc",
-          "description": "The file extension to use for synchronized lyrics files."
+          "description": "File extension for plain lyrics files."
         },
+
         "overwriteLyrics": {
           "type": "boolean",
           "title": "Overwrite existing lyrics files",
           "default": false
+        },
+
+        "writeToSpecificFolder": {
+          "type": "boolean",
+          "title": "Write lyrics to a centralized folder instead of next to each song file.",
+          "default": false
+        },
+
+        "writeToSpecificFolderLibraryId": {
+          "type": "integer",
+          "title": "Library ID",
+          "minimum": 0,
+          "description": "The library whose root will be used as the base for the output path. Use the numeric ID as shown in Navidrome."
+        },
+
+        "writeToSpecificFolderTemplate": {
+          "type": "string",
+          "title": "Output path template",
+          "default": "_lyrics/{type}/{track:id}.{ext}",
+          "description": "Path relative to the selected library root. Supports template variables. See GitHub for the full list."
         }
+      },
+      "if": {
+        "properties": {
+          "writeToSpecificFolder": { "const": true }
+        },
+        "required": ["writeToSpecificFolder"]
+      },
+      "then": {
+        "required": ["writeToSpecificFolderLibraryId"]
       }
     },
+
     "uiSchema": {
       "type": "VerticalLayout",
       "elements": [
         {
           "type": "Group",
-          "label": "General",
+          "label": "Lyrics",
           "elements": [
             {
+              "type": "Label",
+              "text": "Select the types of lyrics to fetch."
+            },
+            {
+              "type": "HorizontalLayout",
+              "elements": [
+                {
+                  "type": "Control",
+                  "scope": "#/properties/lyricsSynced"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/lyricsPlain"
+                }
+              ]
+            },
+            {
               "type": "Control",
-              "scope": "#/properties/lyricsMode",
+              "scope": "#/properties/lyricsPriority",
               "options": {
                 "format": "radio"
               }
-            },
+            }
+          ]
+        },
+
+        {
+          "type": "Group",
+          "label": "Providers",
+          "elements": [
             {
               "type": "Control",
               "scope": "#/properties/providers"
             }
           ]
         },
+
         {
           "type": "Group",
           "label": "Cache",
@@ -120,12 +192,15 @@
                 "effect": "SHOW",
                 "condition": {
                   "scope": "#/properties/enableCache",
-                  "schema": { "const": true }
+                  "schema": {
+                    "const": true
+                  }
                 }
               }
             }
           ]
         },
+
         {
           "type": "Group",
           "label": "File Writing",
@@ -154,7 +229,9 @@
                 "effect": "SHOW",
                 "condition": {
                   "scope": "#/properties/writeLyrics",
-                  "schema": { "const": true }
+                  "schema": {
+                    "const": true
+                  }
                 }
               }
             },
@@ -165,7 +242,48 @@
                 "effect": "SHOW",
                 "condition": {
                   "scope": "#/properties/writeLyrics",
-                  "schema": { "const": true }
+                  "schema": {
+                    "const": true
+                  }
+                }
+              }
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/writeToSpecificFolder",
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#/properties/writeLyrics",
+                  "schema": {
+                    "const": true
+                  }
+                }
+              }
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/writeToSpecificFolderLibraryId",
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#/properties/writeToSpecificFolder",
+                  "schema": {
+                    "const": true
+                  }
+                }
+              }
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/writeToSpecificFolderTemplate",
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#/properties/writeToSpecificFolder",
+                  "schema": {
+                    "const": true
+                  }
                 }
               }
             }

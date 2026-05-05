@@ -1,8 +1,8 @@
 use crate::{
-    LyricsKind,
-    config::LyricsMode,
+    config::PluginConfig,
     providers::{lrclib::Lrclib, lyricsovh::LyricsOvh},
     registry::ProviderRegistry,
+    types::LyricsType,
 };
 use nd_pdk::lyrics::{Error, TrackInfo};
 
@@ -22,6 +22,6 @@ pub trait LyricsProvider {
     fn fetch_lyrics(
         &self,
         track: &TrackInfo,
-        lyrics_mode: LyricsMode,
-    ) -> Result<Option<(String, LyricsKind)>, Error>;
+        cfg: &PluginConfig,
+    ) -> Result<Option<(String, LyricsType)>, Error>;
 }

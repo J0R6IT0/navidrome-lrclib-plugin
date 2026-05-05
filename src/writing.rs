@@ -14,31 +14,29 @@ pub fn write(
         return Err(LyricsError::new("track path is empty"));
     }
 
-    if let Some(mut path) = resolve_track_path(track)? {
-        path.set_extension(extension);
+    let mut path = resolve_track_path(track)?
+        .ok_or_else(|| LyricsError::new("could not resolve track path to a valid local file"))?;
 
-        if path.exists() && !overwrite {
-            return Ok(());
-        }
+    path.set_extension(extension);
 
-        fs::write(&path, text.as_bytes())
-            .map_err(|e| LyricsError::new(format!("failed to write lyrics file: {e}")))?;
-
-        Ok(())
-    } else {
-        Err(LyricsError::new("could not resolve track path!"))
+    if path.exists() && !overwrite {
+        return Ok(());
     }
+
+    fs::write(&path, text)
+        .map_err(|e| LyricsError::new(format!("failed to write lyrics file: {e}")))?;
+
+    Ok(())
 }
 
 fn resolve_track_path(track: &TrackInfo) -> Result<Option<PathBuf>, LyricsError> {
     let libraries = library::get_all_libraries()
-        .map_err(|e| LyricsError::new(format!("failed to list libraries: {e}")))?;
+        .map_err(|e| LyricsError::new(format!("failed to query libraries: {e}")))?;
 
-    for library in libraries {
-        let mount_point = library.mount_point;
-        let full_path = PathBuf::from(mount_point).join(&track.path);
-        if fs::metadata(&full_path).is_ok() {
-            return Ok(Some(full_path));
+    for lib in libraries {
+        let path = PathBuf::from(lib.mount_point).join(&track.path);
+        if path.exists() {
+            return Ok(Some(path));
         }
     }
 

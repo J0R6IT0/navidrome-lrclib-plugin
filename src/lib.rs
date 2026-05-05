@@ -1,4 +1,7 @@
-use crate::{cache::LyricsCache, providers::register_providers, registry::ProviderRegistry};
+use crate::providers::register_providers;
+use crate::registry::ProviderRegistry;
+use crate::types::LyricsType;
+use crate::{cache::LyricsCache, providers::LyricsProvider};
 use config::PluginConfig;
 use extism_pdk::warn;
 use nd_pdk::lyrics::{
@@ -9,13 +12,8 @@ mod cache;
 mod config;
 mod providers;
 mod registry;
+mod types;
 mod writing;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LyricsKind {
-    Synchronized,
-    Plain,
-}
 
 #[derive(Default)]
 struct Plugin;
@@ -24,58 +22,79 @@ nd_pdk::register_lyrics!(Plugin);
 
 impl Lyrics for Plugin {
     fn get_lyrics(&self, req: GetLyricsRequest) -> Result<GetLyricsResponse, LyricsError> {
-        let mut registry = ProviderRegistry::new();
-        register_providers(&mut registry);
-
         let track = req.track;
         let cfg = PluginConfig::load()?;
         let cache = cfg.enable_cache.then(|| LyricsCache::new(cfg.cache_ttl));
 
-        if let Some(ref cache) = cache {
-            if let Some(cached) = cache.read(&track.id, cfg.lyrics_mode) {
-                return Ok(make_response(cached));
-            }
+        if let Some(cached) = cache.as_ref().and_then(|c| c.read(&track.id, &cfg)) {
+            write_lyrics_if_enabled(&track, &cached.text, cached.kind, &cfg);
+            return Ok(make_response(cached.text));
         }
 
+        let mut registry = ProviderRegistry::new();
+        register_providers(&mut registry);
+
         for provider_id in &cfg.providers {
-            let provider = match registry.get(provider_id) {
-                Some(p) => p,
-                None => continue,
+            let Some(provider) = registry.get(provider_id) else {
+                continue;
             };
 
-            let result = match provider.fetch_lyrics(&track, cfg.lyrics_mode) {
-                Ok(r) => r,
-                Err(e) => {
-                    warn!("provider {} failed: {}", provider_id, e);
-                    continue;
-                }
+            let Some((text, kind)) = fetch_from_provider(provider, &track, &cfg, provider_id)
+            else {
+                continue;
             };
 
-            let (text, kind) = match result {
-                Some(r) => r,
-                None => continue,
-            };
-
-            if cfg.write_lyrics {
-                let extension = match kind {
-                    LyricsKind::Synchronized => &cfg.synced_extension,
-                    LyricsKind::Plain => &cfg.plain_extension,
-                };
-                if writing::write(&track, &text, extension, cfg.overwrite_lyrics).is_err() {
-                    warn!("failed to write lyrics file");
-                }
-            }
-
-            if let Some(ref cache) = cache {
-                if cache.write(&track.id, &text, kind).is_err() {
-                    warn!("failed to write to cache");
-                }
-            }
+            write_lyrics_if_enabled(&track, &text, kind, &cfg);
+            save_to_cache(&cache, &track.id, &text, kind);
 
             return Ok(make_response(text));
         }
 
-        Err(LyricsError::new("no lyrics found"))
+        Err(LyricsError::new("no lyrics found from any provider"))
+    }
+}
+
+fn fetch_from_provider(
+    provider: &dyn LyricsProvider,
+    track: &nd_pdk::lyrics::TrackInfo,
+    cfg: &PluginConfig,
+    provider_id: &str,
+) -> Option<(String, LyricsType)> {
+    match provider.fetch_lyrics(track, cfg) {
+        Ok(Some(result)) => Some(result),
+        Ok(None) => None,
+        Err(e) => {
+            warn!("provider '{}' failed: {}", provider_id, e);
+            None
+        }
+    }
+}
+
+fn write_lyrics_if_enabled(
+    track: &nd_pdk::lyrics::TrackInfo,
+    text: &str,
+    kind: LyricsType,
+    cfg: &PluginConfig,
+) {
+    if !cfg.write_lyrics {
+        return;
+    }
+
+    let extension = match kind {
+        LyricsType::Synced => &cfg.synced_extension,
+        LyricsType::Plain => &cfg.plain_extension,
+    };
+
+    if writing::write(track, text, extension, cfg.overwrite_lyrics).is_err() {
+        warn!("failed to write lyrics file to disk");
+    }
+}
+
+fn save_to_cache(cache: &Option<LyricsCache>, track_id: &str, text: &str, kind: LyricsType) {
+    let Some(cache) = cache else { return };
+
+    if cache.write(track_id, text, kind).is_err() {
+        warn!("failed to persist lyrics to cache");
     }
 }
 
