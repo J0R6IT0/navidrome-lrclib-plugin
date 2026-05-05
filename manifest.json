@@ -117,7 +117,7 @@
         "writeToSpecificFolderTemplate": {
           "type": "string",
           "title": "Output path template",
-          "default": "_lyrics/{type}/{track:id}",
+          "default": "_lyrics/{type}/{track:album_artist} - {track:album}/{track:disc_number:2} - {track:track_number:2} {track:title}",
           "description": "Path relative to the selected library root. Supports template variables. See GitHub for the full list."
         }
       },

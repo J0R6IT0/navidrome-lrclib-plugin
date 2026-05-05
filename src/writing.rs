@@ -103,7 +103,7 @@ fn process_template(template: &str, track: &TrackInfo, kind: LyricsType, ext: &s
             continue;
         }
 
-        let substituted = component
+        let mut substituted = component
             .replace("{type}", type_str)
             .replace("{track:id}", &track.id)
             .replace("{track:title}", &track.title)
@@ -112,6 +112,17 @@ fn process_template(template: &str, track: &TrackInfo, kind: LyricsType, ext: &s
             .replace("{track:album_artist}", &track.album_artist)
             .replace("{track:track_number}", &track.track_number.to_string())
             .replace("{track:disc_number}", &track.disc_number.to_string());
+
+        substituted = replace_padded_variable(
+            &substituted,
+            "track:track_number",
+            &track.track_number.to_string(),
+        );
+        substituted = replace_padded_variable(
+            &substituted,
+            "track:disc_number",
+            &track.disc_number.to_string(),
+        );
 
         let sanitized = sanitize_path_segment(&substituted);
 
@@ -141,6 +152,41 @@ fn process_template(template: &str, track: &TrackInfo, kind: LyricsType, ext: &s
     } else {
         PathBuf::from(format!("{clean_path}.{ext}"))
     }
+}
+
+fn replace_padded_variable(template: &str, var_name: &str, value: &str) -> String {
+    let mut result = template.to_string();
+    let search_prefix = format!("{{{var_name}");
+
+    let mut start = 0;
+    while let Some(pos) = result[start..].find(&search_prefix) {
+        let abs_pos = start + pos;
+        let remaining = &result[abs_pos..];
+
+        if let Some(end_offset) = remaining.find('}') {
+            let var_end = abs_pos + end_offset + 1;
+            let full_var = &result[abs_pos..var_end];
+
+            let inner = &full_var[1..full_var.len() - 1];
+            let width = if let Some(padding_str) = inner.strip_prefix(&format!("{var_name}:")) {
+                padding_str.parse::<usize>().unwrap_or(0)
+            } else {
+                0
+            };
+
+            let formatted_value = if width > 0 {
+                format!("{:0>width$}", value, width = width)
+            } else {
+                value.to_string()
+            };
+
+            result.replace_range(abs_pos..var_end, &formatted_value);
+            start = abs_pos + formatted_value.len();
+        } else {
+            break;
+        }
+    }
+    result
 }
 
 fn sanitize_path_segment(name: &str) -> String {
@@ -188,6 +234,43 @@ mod tests {
             disc_number: 1,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn test_replace_padded_variable_no_padding() {
+        assert_eq!(
+            replace_padded_variable("{track:track_number}", "track:track_number", "5"),
+            "5"
+        );
+    }
+
+    #[test]
+    fn test_replace_padded_variable_with_padding() {
+        assert_eq!(
+            replace_padded_variable("{track:track_number:2}", "track:track_number", "5"),
+            "05"
+        );
+        assert_eq!(
+            replace_padded_variable("{track:track_number:3}", "track:track_number", "12"),
+            "012"
+        );
+    }
+
+    #[test]
+    fn test_replace_padded_variable_invalid_padding_fallback() {
+        assert_eq!(
+            replace_padded_variable("{track:track_number:abc}", "track:track_number", "5"),
+            "5"
+        );
+    }
+
+    #[test]
+    fn test_replace_padded_variable_multiple_occurrences() {
+        let template = "{track:track_number:2}_disc{track:disc_number:2}";
+        assert_eq!(
+            replace_padded_variable(template, "track:track_number", "7"),
+            "07_disc{track:disc_number:2}"
+        );
     }
 
     #[test]
@@ -416,6 +499,31 @@ mod tests {
         assert_eq!(
             path,
             PathBuf::from("lyrics/synced/Test Artist/Test Song.lrc")
+        );
+    }
+
+    #[test]
+    fn test_process_template_with_padded_numbers() {
+        let track = TrackInfo {
+            track_number: 5,
+            disc_number: 1,
+            ..default_track()
+        };
+
+        let template_unpadded =
+            "lyrics/Disc {track:disc_number}/{track:track_number} - {track:title}";
+        let path_unpadded = process_template(template_unpadded, &track, LyricsType::Plain, "txt");
+        assert_eq!(
+            path_unpadded,
+            PathBuf::from("lyrics/Disc 1/5 - Test Song.txt")
+        );
+
+        let template_padded =
+            "lyrics/Disc {track:disc_number:2}/{track:track_number:2} - {track:title}";
+        let path_padded = process_template(template_padded, &track, LyricsType::Plain, "txt");
+        assert_eq!(
+            path_padded,
+            PathBuf::from("lyrics/Disc 01/05 - Test Song.txt")
         );
     }
 }

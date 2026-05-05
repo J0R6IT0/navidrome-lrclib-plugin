@@ -7,7 +7,7 @@ const MIN_CACHE_TTL: i64 = 60;
 
 const DEFAULT_PLAIN_EXTENSION: &str = "txt";
 const DEFAULT_SYNCED_EXTENSION: &str = "lrc";
-const DEFAULT_FOLDER_TEMPLATE: &str = "_lyrics/{type}/{track:id}";
+const DEFAULT_FOLDER_TEMPLATE: &str = "_lyrics/{type}/{track:album_artist} - {track:album}/{track:disc_number:2} - {track:track_number:2} {track:title}";
 
 pub struct PluginConfig {
     pub lyrics_type_priority: Vec<LyricsType>,
