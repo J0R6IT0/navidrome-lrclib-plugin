@@ -29,7 +29,7 @@ directly when available. This will only work if "Write to custom path" is disabl
 
 At this time the following providers are available. Please report any issues you encounter with them.
 
-| Provider   | Mode           |
+| Provider   | Type           |
 | ---------- | -------------- |
 | lrclib     | plain + synced |
 | lyrics.ovh | plain          |
@@ -37,7 +37,7 @@ At this time the following providers are available. Please report any issues you
 
 ## Path variables
 
-Custom paths to write music files to can be composed using path variables.
+Custom paths to write lyrics files to can be composed using path variables.
 
 Consider the following example:
 
