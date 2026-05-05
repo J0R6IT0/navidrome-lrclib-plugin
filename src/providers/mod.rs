@@ -1,11 +1,12 @@
 use crate::{
     config::PluginConfig,
-    providers::{lrclib::Lrclib, lyricsovh::LyricsOvh},
+    providers::{kugou::Kugou, lrclib::Lrclib, lyricsovh::LyricsOvh},
     registry::ProviderRegistry,
     types::LyricsType,
 };
 use nd_pdk::lyrics::{Error, TrackInfo};
 
+mod kugou;
 mod lrclib;
 mod lyricsovh;
 
@@ -15,6 +16,7 @@ const USER_AGENT: &str =
 pub fn register_providers(registry: &mut ProviderRegistry) {
     registry.register(Box::new(Lrclib));
     registry.register(Box::new(LyricsOvh));
+    registry.register(Box::new(Kugou));
 }
 
 pub trait LyricsProvider {

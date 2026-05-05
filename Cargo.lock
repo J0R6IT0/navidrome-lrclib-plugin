@@ -224,6 +224,7 @@ dependencies = [
 name = "navidrome-lrclib-plugin"
 version = "5.0.0"
 dependencies = [
+ "base64",
  "extism-pdk",
  "flate2",
  "nd-pdk",

@@ -1,5 +1,6 @@
 use crate::providers::register_providers;
 use crate::registry::ProviderRegistry;
+use crate::sanitize::sanitize_lrc;
 use crate::types::LyricsType;
 use crate::{cache::LyricsCache, providers::LyricsProvider};
 use config::PluginConfig;
@@ -12,6 +13,7 @@ mod cache;
 mod config;
 mod providers;
 mod registry;
+mod sanitize;
 mod types;
 mod writing;
 
@@ -44,10 +46,16 @@ impl Lyrics for Plugin {
                 continue;
             };
 
-            write_lyrics_if_enabled(&track, &text, kind, &cfg);
-            save_to_cache(&cache, &track.id, &text, kind);
+            let sanitized = if kind == LyricsType::Synced {
+                sanitize_lrc(&text)
+            } else {
+                text
+            };
 
-            return Ok(make_response(text));
+            write_lyrics_if_enabled(&track, &sanitized, kind, &cfg);
+            save_to_cache(&cache, &track.id, &sanitized, kind);
+
+            return Ok(make_response(sanitized));
         }
 
         Err(LyricsError::new("no lyrics found from any provider"))
