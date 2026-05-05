@@ -162,13 +162,7 @@ mod tests {
     fn make_config(priority: Vec<LyricsType>) -> PluginConfig {
         PluginConfig {
             lyrics_type_priority: priority,
-            write_lyrics: false,
-            overwrite_lyrics: false,
-            plain_extension: "txt".to_string(),
-            synced_extension: "lrc".to_string(),
-            enable_cache: true,
-            cache_ttl: 60,
-            providers: vec![],
+            ..Default::default()
         }
     }
 

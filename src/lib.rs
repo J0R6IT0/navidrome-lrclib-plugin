@@ -80,12 +80,7 @@ fn write_lyrics_if_enabled(
         return;
     }
 
-    let extension = match kind {
-        LyricsType::Synced => &cfg.synced_extension,
-        LyricsType::Plain => &cfg.plain_extension,
-    };
-
-    if writing::write(track, text, extension, cfg.overwrite_lyrics).is_err() {
+    if writing::write(track, text, kind, cfg).is_err() {
         warn!("failed to write lyrics file to disk");
     }
 }

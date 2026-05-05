@@ -7,6 +7,7 @@ const MIN_CACHE_TTL: i64 = 60;
 
 const DEFAULT_PLAIN_EXTENSION: &str = "txt";
 const DEFAULT_SYNCED_EXTENSION: &str = "lrc";
+const DEFAULT_FOLDER_TEMPLATE: &str = "_lyrics/{type}/{track:id}";
 
 pub struct PluginConfig {
     pub lyrics_type_priority: Vec<LyricsType>,
@@ -17,6 +18,27 @@ pub struct PluginConfig {
     pub enable_cache: bool,
     pub cache_ttl: i64,
     pub providers: Vec<String>,
+    pub write_to_specific_folder: bool,
+    pub write_to_specific_folder_library_id: Option<i32>,
+    pub write_to_specific_folder_template: String,
+}
+
+impl Default for PluginConfig {
+    fn default() -> Self {
+        Self {
+            lyrics_type_priority: vec![],
+            write_lyrics: false,
+            overwrite_lyrics: false,
+            plain_extension: DEFAULT_PLAIN_EXTENSION.to_string(),
+            synced_extension: DEFAULT_SYNCED_EXTENSION.to_string(),
+            enable_cache: true,
+            cache_ttl: DEFAULT_CACHE_TTL,
+            providers: vec![],
+            write_to_specific_folder: false,
+            write_to_specific_folder_library_id: None,
+            write_to_specific_folder_template: DEFAULT_FOLDER_TEMPLATE.to_string(),
+        }
+    }
 }
 
 impl PluginConfig {
@@ -30,6 +52,12 @@ impl PluginConfig {
             enable_cache: get_bool("enableCache", true)?,
             cache_ttl: resolve_cache_ttl()?,
             providers: resolve_providers()?,
+            write_to_specific_folder: get_bool("writeToSpecificFolder", false)?,
+            write_to_specific_folder_library_id: get_optional_i32(
+                "writeToSpecificFolderLibraryId",
+            )?,
+            write_to_specific_folder_template: get_string("writeToSpecificFolderTemplate")?
+                .unwrap_or_else(|| DEFAULT_FOLDER_TEMPLATE.to_string()),
         })
     }
 
@@ -134,6 +162,12 @@ fn get_i64(key: &str, default: i64) -> Result<i64, LyricsError> {
     config::get(key)
         .map_err(|e| LyricsError::new(e.to_string()))
         .map(|v| v.and_then(|s| s.parse().ok()).unwrap_or(default))
+}
+
+fn get_optional_i32(key: &str) -> Result<Option<i32>, LyricsError> {
+    config::get(key)
+        .map_err(|e| LyricsError::new(e.to_string()))
+        .map(|v| v.and_then(|s| s.parse().ok()))
 }
 
 #[cfg(test)]

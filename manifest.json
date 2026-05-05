@@ -103,7 +103,7 @@
 
         "writeToSpecificFolder": {
           "type": "boolean",
-          "title": "Write lyrics to a centralized folder instead of next to each song file.",
+          "title": "Write lyrics to a custom path instead of next to each song file.",
           "default": false
         },
 
@@ -117,7 +117,7 @@
         "writeToSpecificFolderTemplate": {
           "type": "string",
           "title": "Output path template",
-          "default": "_lyrics/{type}/{track:id}.{ext}",
+          "default": "_lyrics/{type}/{track:id}",
           "description": "Path relative to the selected library root. Supports template variables. See GitHub for the full list."
         }
       },
