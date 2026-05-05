@@ -104,7 +104,7 @@
           "type": "string",
           "title": "Synced lyrics extension",
           "default": "lrc",
-          "description": "File extension for plain lyrics files."
+          "description": "File extension for synced lyrics files."
         },
 
         "overwriteLyrics": {
