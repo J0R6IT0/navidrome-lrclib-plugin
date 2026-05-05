@@ -13,6 +13,9 @@ mod lyricsovh;
 const USER_AGENT: &str =
     "navidrome-lrclib-plugin/5.0.0 (https://github.com/J0R6IT0/navidrome-lyrics-plugin)";
 
+const FIREFOX_USER_AGENT: &str =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.7; rv:150.0) Gecko/20100101 Firefox/150.0";
+
 pub fn register_providers(registry: &mut ProviderRegistry) {
     registry.register(Box::new(Lrclib));
     registry.register(Box::new(LyricsOvh));

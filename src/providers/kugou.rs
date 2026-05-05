@@ -1,10 +1,9 @@
 use crate::{
     config::PluginConfig,
-    providers::{LyricsProvider, USER_AGENT},
+    providers::{FIREFOX_USER_AGENT, LyricsProvider},
     types::LyricsType,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use extism_pdk::warn;
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
     lyrics::{Error, TrackInfo},
@@ -81,8 +80,6 @@ impl LyricsProvider for Kugou {
             None => return Ok(None),
         };
 
-        warn!("got song {}", song.hash);
-
         let candidate = match find_candidate(&song.hash, song.duration)? {
             Some(c) => c,
             None => return Ok(None),
@@ -115,8 +112,6 @@ fn find_song(keyword: &str, target_duration: f32) -> Result<Option<SongInfo>, Er
 
     let parsed: SongSearchResponse = serde_json::from_slice(&response.body)
         .map_err(|e| Error::new(format!("kugou: failed to parse song search response: {e}")))?;
-
-    warn!("got song search response: {:?}", parsed);
 
     let tolerance = 2u64;
     let target_secs = target_duration.round() as u64;
@@ -195,7 +190,7 @@ fn download_lrc(id: &str, accesskey: &str) -> Result<String, Error> {
 
 fn send_request(url: &str) -> Result<HTTPResponse, Error> {
     let mut headers = HashMap::new();
-    headers.insert("User-Agent".into(), USER_AGENT.into());
+    headers.insert("User-Agent".into(), FIREFOX_USER_AGENT.into());
 
     http::send(HTTPRequest {
         url: url.into(),

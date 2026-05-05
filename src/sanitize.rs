@@ -58,10 +58,14 @@ pub fn sanitize_lrc(lrc: &str) -> String {
             }
 
             for prefix in CREDIT_PREFIXES {
-                if let Some(rest) = text.strip_prefix(prefix)
-                    && (rest.starts_with(':') || rest.starts_with('：'))
-                {
-                    return false;
+                if let Some(head) = text.get(..prefix.len()) {
+                    let rest = &text[prefix.len()..];
+
+                    if head.eq_ignore_ascii_case(prefix)
+                        && (rest.starts_with(':') || rest.starts_with('：'))
+                    {
+                        return false;
+                    }
                 }
             }
 
@@ -89,6 +93,7 @@ pub fn strip_section_labels(lyrics: &str) -> String {
                 cleaned.trim_end().to_string()
             }
         })
+        .filter(|line| !line.trim().is_empty())
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -103,7 +108,7 @@ mod tests {
         #[test]
         fn test_basic_removal() {
             let input = "[Verse 1]\nHello there\n[Chorus]\nWe will rock you";
-            let expected = "\nHello there\n\nWe will rock you";
+            let expected = "Hello there\nWe will rock you";
             assert_eq!(strip_section_labels(input), expected);
         }
 
@@ -111,7 +116,7 @@ mod tests {
         fn test_variants_and_suffixes() {
             let input =
                 "[Verse 2]\n[Pre-Chorus: Lead]\n[Hook - Artist]\n[Chorus 3x]\n[Outro (Fade)]";
-            let expected = "\n\n\n\n";
+            let expected = "";
             assert_eq!(strip_section_labels(input), expected);
         }
 
@@ -123,16 +128,9 @@ mod tests {
         }
 
         #[test]
-        fn test_preserve_empty_lines() {
-            let input = "[Verse 1]\nHello\n\n[Chorus]\nRock you";
-            let expected = "\nHello\n\n\nRock you";
-            assert_eq!(strip_section_labels(input), expected);
-        }
-
-        #[test]
         fn test_case_insensitivity() {
             let input = "[VERSE 1]\nHello\n[chorus]\nRock you";
-            let expected = "\nHello\n\nRock you";
+            let expected = "Hello\nRock you";
             assert_eq!(strip_section_labels(input), expected);
         }
 
@@ -154,7 +152,7 @@ mod tests {
         fn test_hyphenated_variants() {
             let input =
                 "[Pre-Chorus]\nLet's go\n[Pre Chorus]\nLet's go again\n[Prechorus]\nOne more time";
-            let expected = "\nLet's go\n\nLet's go again\n\nOne more time";
+            let expected = "Let's go\nLet's go again\nOne more time";
             assert_eq!(strip_section_labels(input), expected);
         }
 

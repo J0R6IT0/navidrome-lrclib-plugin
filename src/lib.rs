@@ -46,6 +46,8 @@ impl Lyrics for Plugin {
                 continue;
             };
 
+            warn!("sanitizing");
+
             let mut sanitized = if kind == LyricsType::Synced {
                 sanitize_lrc(&text)
             } else {
