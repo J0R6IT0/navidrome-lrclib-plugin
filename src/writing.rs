@@ -109,9 +109,7 @@ fn process_template(template: &str, track: &TrackInfo, kind: LyricsType, ext: &s
             .replace("{track:title}", &track.title)
             .replace("{track:album}", &track.album)
             .replace("{track:artist}", &track.artist)
-            .replace("{track:album_artist}", &track.album_artist)
-            .replace("{track:track_number}", &track.track_number.to_string())
-            .replace("{track:disc_number}", &track.disc_number.to_string());
+            .replace("{track:album_artist}", &track.album_artist);
 
         substituted = replace_padded_variable(
             &substituted,
