@@ -30,6 +30,8 @@ pub fn sanitize_lrc(lrc: &str) -> String {
         "Adapted by",
     ];
 
+    let mut first_time_tag_processed = false;
+
     lrc.lines()
         .filter(|line| {
             let trimmed = line.trim();
@@ -41,13 +43,30 @@ pub fn sanitize_lrc(lrc: &str) -> String {
                 let content = &rest[..bracket_end];
                 text = &rest[bracket_end + 1..];
 
-                let is_time_tag = content.split_once(':').is_some_and(|(left, right)| {
-                    left.chars().all(|c| c.is_ascii_digit())
+                let time_tag_secs = content.split_once(':').and_then(|(left, right)| {
+                    if left.chars().all(|c| c.is_ascii_digit())
                         && right.contains('.')
                         && right.chars().all(|c| c.is_ascii_digit() || c == '.')
+                    {
+                        let mins = left.parse::<f64>().unwrap_or(0.0);
+                        let secs = right.parse::<f64>().unwrap_or(0.0);
+                        Some(mins * 60.0 + secs)
+                    } else {
+                        None
+                    }
                 });
 
-                if is_time_tag {
+                if let Some(total_secs) = time_tag_secs {
+                    if !first_time_tag_processed {
+                        first_time_tag_processed = true;
+
+                        let has_title_dash = text.contains(" - ");
+                        let has_letters = text.chars().any(|c| c.is_alphabetic());
+
+                        if total_secs < 5.0 && has_title_dash && has_letters {
+                            return false;
+                        }
+                    }
                 } else if let Some((key, _)) = content.split_once(':') {
                     if !KEEP_TAGS.contains(&key) {
                         return false;
