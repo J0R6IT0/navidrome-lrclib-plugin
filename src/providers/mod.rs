@@ -11,7 +11,7 @@ mod lrclib;
 mod lyricsovh;
 
 const USER_AGENT: &str =
-    "navidrome-lrclib-plugin/5.0.0 (https://github.com/J0R6IT0/navidrome-lrclib-plugin)";
+    "navidrome-lrclib-plugin/5.0.0 (https://github.com/J0R6IT0/navidrome-lyrics-plugin)";
 
 pub fn register_providers(registry: &mut ProviderRegistry) {
     registry.register(Box::new(Lrclib));

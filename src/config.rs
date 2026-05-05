@@ -21,6 +21,7 @@ pub struct PluginConfig {
     pub write_to_specific_folder: bool,
     pub write_to_specific_folder_library_id: Option<i32>,
     pub write_to_specific_folder_template: String,
+    pub strip_section_labels: bool,
 }
 
 impl Default for PluginConfig {
@@ -37,6 +38,7 @@ impl Default for PluginConfig {
             write_to_specific_folder: false,
             write_to_specific_folder_library_id: None,
             write_to_specific_folder_template: DEFAULT_FOLDER_TEMPLATE.to_string(),
+            strip_section_labels: false,
         }
     }
 }
@@ -58,6 +60,7 @@ impl PluginConfig {
             )?,
             write_to_specific_folder_template: get_string("writeToSpecificFolderTemplate")?
                 .unwrap_or_else(|| DEFAULT_FOLDER_TEMPLATE.to_string()),
+            strip_section_labels: get_bool("stripSectionLabels", false)?,
         })
     }
 

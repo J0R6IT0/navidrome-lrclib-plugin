@@ -1,6 +1,6 @@
 use crate::providers::register_providers;
 use crate::registry::ProviderRegistry;
-use crate::sanitize::sanitize_lrc;
+use crate::sanitize::{sanitize_lrc, strip_section_labels};
 use crate::types::LyricsType;
 use crate::{cache::LyricsCache, providers::LyricsProvider};
 use config::PluginConfig;
@@ -46,11 +46,15 @@ impl Lyrics for Plugin {
                 continue;
             };
 
-            let sanitized = if kind == LyricsType::Synced {
+            let mut sanitized = if kind == LyricsType::Synced {
                 sanitize_lrc(&text)
             } else {
                 text
             };
+
+            if cfg.strip_section_labels {
+                sanitized = strip_section_labels(&sanitized);
+            }
 
             write_lyrics_if_enabled(&track, &sanitized, kind, &cfg);
             save_to_cache(&cache, &track.id, &sanitized, kind);

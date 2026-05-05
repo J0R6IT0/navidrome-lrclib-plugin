@@ -59,6 +59,13 @@
           ]
         },
 
+        "stripSectionLabels": {
+          "type": "boolean",
+          "title": "Strip section labels ([Verse], [Chorus], etc.)",
+          "default": false,
+          "description": ""
+        },
+
         "providers": {
           "type": "string",
           "title": "Lyrics providers",
@@ -167,6 +174,10 @@
               "options": {
                 "format": "radio"
               }
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/stripSectionLabels"
             }
           ]
         },
