@@ -11,18 +11,22 @@ use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use std::collections::HashMap;
 
-const BASE_URL: &str = "https://api.lyrics.ovh/v1";
+const DEFAULT_BASE_URL: &str = "https://api.lyrics.ovh";
 
 #[derive(Debug, Deserialize)]
 struct ApiResponse {
     lyrics: String,
 }
 
-pub struct LyricsOvh;
+pub struct LyricsOvh {
+    base_url: String,
+}
 
 impl LyricsOvh {
-    pub fn create(_param: Option<&str>) -> Box<dyn LyricsProvider> {
-        Box::new(Self)
+    pub fn create(param: Option<&str>) -> Box<dyn LyricsProvider> {
+        Box::new(Self {
+            base_url: param.unwrap_or(DEFAULT_BASE_URL).to_string(),
+        })
     }
 }
 
@@ -43,7 +47,7 @@ impl LyricsProvider for LyricsOvh {
             .name
             .as_str();
 
-        let url = build_search_url(first_artist, &track.title);
+        let url = build_search_url(&self.base_url, first_artist, &track.title);
         let response = send_request(&url)?;
 
         if response.status_code == 404 {
@@ -64,10 +68,10 @@ impl LyricsProvider for LyricsOvh {
     }
 }
 
-fn build_search_url(artist: &str, title: &str) -> String {
+fn build_search_url(base_url: &str, artist: &str, title: &str) -> String {
     let encoded_artist = utf8_percent_encode(artist, NON_ALPHANUMERIC).to_string();
     let encoded_title = utf8_percent_encode(title, NON_ALPHANUMERIC).to_string();
-    format!("{BASE_URL}/{encoded_artist}/{encoded_title}")
+    format!("{base_url}/v1/{encoded_artist}/{encoded_title}")
 }
 
 fn send_request(url: &str) -> Result<HTTPResponse, Error> {
@@ -92,19 +96,25 @@ mod tests {
 
     #[test]
     fn test_build_search_url_simple() {
-        let url = build_search_url("The Beatles", "Hey Jude");
+        let url = build_search_url(DEFAULT_BASE_URL, "The Beatles", "Hey Jude");
         assert_eq!(url, "https://api.lyrics.ovh/v1/The%20Beatles/Hey%20Jude");
     }
 
     #[test]
     fn test_build_search_url_special_chars() {
-        let url = build_search_url("AC/DC", "Back in Black");
+        let url = build_search_url(DEFAULT_BASE_URL, "AC/DC", "Back in Black");
         assert_eq!(url, "https://api.lyrics.ovh/v1/AC%2FDC/Back%20in%20Black");
     }
 
     #[test]
     fn test_build_search_url_unicode() {
-        let url = build_search_url("Björk", "Hyperballad");
+        let url = build_search_url(DEFAULT_BASE_URL, "Björk", "Hyperballad");
         assert_eq!(url, "https://api.lyrics.ovh/v1/Bj%C3%B6rk/Hyperballad");
+    }
+
+    #[test]
+    fn test_build_search_url_custom_base() {
+        let url = build_search_url("http://localhost:8080", "Artist", "Title");
+        assert_eq!(url, "http://localhost:8080/v1/Artist/Title");
     }
 }

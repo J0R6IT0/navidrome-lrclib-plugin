@@ -40,8 +40,8 @@ lrclib(http://my_custom_lrclib.net),lrclib,lyrics.ovh
 
 | Provider   | Type           | Optional parameters |
 | ---------- | -------------- | ------------------- |
-| lrclib     | plain + synced | Custom base URL     |
-| lyrics.ovh | plain          |                     |
+| lrclib     | plain + synced | (Base URL)          |
+| lyrics.ovh | plain          | (Base URL)          |
 | kugou      | synced         |                     |
 
 ## Path variables
