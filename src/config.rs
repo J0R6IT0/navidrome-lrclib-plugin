@@ -1,6 +1,7 @@
 use crate::types::LyricsType;
 use extism_pdk::warn;
 use nd_pdk::{host::config, lyrics::Error as LyricsError};
+use std::collections::HashSet;
 
 const DEFAULT_CACHE_TTL: i64 = 86_400;
 const MIN_CACHE_TTL: i64 = 60;
@@ -8,6 +9,27 @@ const MIN_CACHE_TTL: i64 = 60;
 const DEFAULT_PLAIN_EXTENSION: &str = "txt";
 const DEFAULT_SYNCED_EXTENSION: &str = "lrc";
 const DEFAULT_FOLDER_TEMPLATE: &str = "_lyrics/{type}/{track:album_artist} - {track:album}/{track:disc_number:2} - {track:track_number:2} {track:title}";
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ProviderEntry {
+    pub name: String,
+    pub param: Option<String>,
+}
+
+impl ProviderEntry {
+    pub fn display_name(&self) -> String {
+        match &self.param {
+            Some(p) => format!("{}({})", self.name, p),
+            None => self.name.clone(),
+        }
+    }
+}
+
+impl std::fmt::Display for ProviderEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display_name())
+    }
+}
 
 pub struct PluginConfig {
     pub lyrics_type_priority: Vec<LyricsType>,
@@ -17,7 +39,7 @@ pub struct PluginConfig {
     pub synced_extension: String,
     pub enable_cache: bool,
     pub cache_ttl: i64,
-    pub providers: Vec<String>,
+    pub providers: Vec<ProviderEntry>,
     pub write_to_specific_folder: bool,
     pub write_to_specific_folder_library_id: Option<i32>,
     pub write_to_specific_folder_template: String,
@@ -128,7 +150,7 @@ fn resolve_cache_ttl() -> Result<i64, LyricsError> {
     Ok(raw)
 }
 
-fn resolve_providers() -> Result<Vec<String>, LyricsError> {
+fn resolve_providers() -> Result<Vec<ProviderEntry>, LyricsError> {
     let providers = get_string("providers")?
         .map(|s| parse_providers(&s))
         .unwrap_or_default();
@@ -140,11 +162,43 @@ fn resolve_providers() -> Result<Vec<String>, LyricsError> {
     Ok(providers)
 }
 
-fn parse_providers(raw: &str) -> Vec<String> {
+fn parse_providers(raw: &str) -> Vec<ProviderEntry> {
+    let mut seen = HashSet::new();
     raw.split(',')
-        .map(|p| p.trim().to_string())
-        .filter(|p| !p.is_empty())
+        .filter_map(parse_provider_entry)
+        .filter(|entry| seen.insert(entry.clone()))
         .collect()
+}
+
+fn parse_provider_entry(raw: &str) -> Option<ProviderEntry> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Some(paren_pos) = trimmed.find('(')
+        && trimmed.ends_with(')')
+    {
+        let name = trimmed[..paren_pos].trim();
+        if name.is_empty() {
+            return None;
+        }
+        let param = trimmed[paren_pos + 1..trimmed.len() - 1].trim();
+        let param = if param.is_empty() {
+            None
+        } else {
+            Some(param.to_string())
+        };
+        return Some(ProviderEntry {
+            name: name.to_string(),
+            param,
+        });
+    }
+
+    Some(ProviderEntry {
+        name: trimmed.to_string(),
+        param: None,
+    })
 }
 
 fn normalize_extension(ext: &str) -> String {
@@ -177,6 +231,13 @@ fn get_optional_i32(key: &str) -> Result<Option<i32>, LyricsError> {
 mod tests {
     use super::*;
 
+    fn entry(name: &str, param: Option<&str>) -> ProviderEntry {
+        ProviderEntry {
+            name: name.to_string(),
+            param: param.map(|s| s.to_string()),
+        }
+    }
+
     #[test]
     fn test_normalize_extension() {
         assert_eq!(normalize_extension("lrc"), "lrc");
@@ -187,21 +248,105 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_providers() {
+    fn test_parse_providers_basic() {
         assert_eq!(
             parse_providers("lrclib,lyrics.ovh"),
-            vec!["lrclib", "lyrics.ovh"]
+            vec![entry("lrclib", None), entry("lyrics.ovh", None)]
         );
-        assert_eq!(parse_providers("lrclib"), vec!["lrclib"]);
+    }
+
+    #[test]
+    fn test_parse_providers_single() {
+        assert_eq!(parse_providers("lrclib"), vec![entry("lrclib", None)]);
+    }
+
+    #[test]
+    fn test_parse_providers_whitespace() {
         assert_eq!(
             parse_providers(" lrclib , lyrics.ovh "),
-            vec!["lrclib", "lyrics.ovh"]
+            vec![entry("lrclib", None), entry("lyrics.ovh", None)]
         );
+    }
+
+    #[test]
+    fn test_parse_providers_empty_entries() {
         assert_eq!(
             parse_providers("lrclib,,lyrics.ovh"),
-            vec!["lrclib", "lyrics.ovh"]
+            vec![entry("lrclib", None), entry("lyrics.ovh", None)]
         );
-        assert_eq!(parse_providers(""), Vec::<String>::new());
-        assert_eq!(parse_providers(","), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_parse_providers_empty_string() {
+        assert_eq!(parse_providers(""), Vec::<ProviderEntry>::new());
+    }
+
+    #[test]
+    fn test_parse_providers_just_comma() {
+        assert_eq!(parse_providers(","), Vec::<ProviderEntry>::new());
+    }
+
+    #[test]
+    fn test_parse_providers_parameterized() {
+        assert_eq!(
+            parse_providers("lrclib(http://localhost:7592)"),
+            vec![entry("lrclib", Some("http://localhost:7592"))]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_mixed_parameterized_and_plain() {
+        assert_eq!(
+            parse_providers("lrclib(http://localhost:7592),lrclib,lyrics.ovh"),
+            vec![
+                entry("lrclib", Some("http://localhost:7592")),
+                entry("lrclib", None),
+                entry("lyrics.ovh", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_dedup_exact_duplicates() {
+        assert_eq!(
+            parse_providers("lrclib,lyrics.ovh,lrclib"),
+            vec![entry("lrclib", None), entry("lyrics.ovh", None)]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_parameterized_not_deduped_with_plain() {
+        assert_eq!(
+            parse_providers("lrclib(http://localhost:7592),lrclib"),
+            vec![
+                entry("lrclib", Some("http://localhost:7592")),
+                entry("lrclib", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_dedup_parameterized_duplicates() {
+        assert_eq!(
+            parse_providers("lrclib(http://x),lyrics.ovh,lrclib(http://x)"),
+            vec![entry("lrclib", Some("http://x")), entry("lyrics.ovh", None),]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_empty_param_treated_as_none() {
+        assert_eq!(parse_providers("lrclib()"), vec![entry("lrclib", None)]);
+    }
+
+    #[test]
+    fn test_display_name_with_param() {
+        let e = entry("lrclib", Some("http://localhost:7592"));
+        assert_eq!(e.display_name(), "lrclib(http://localhost:7592)");
+    }
+
+    #[test]
+    fn test_display_name_without_param() {
+        let e = entry("lrclib", None);
+        assert_eq!(e.display_name(), "lrclib");
     }
 }

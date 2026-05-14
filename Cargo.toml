@@ -1,6 +1,6 @@
 [package]
 name = "navidrome-lyrics-plugin"
-version = "5.0.1"
+version = "5.1.0"
 edition = "2024"
 
 [lib]

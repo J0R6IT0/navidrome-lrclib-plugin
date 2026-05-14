@@ -10,7 +10,7 @@ use nd_pdk::{
 use serde::Deserialize;
 use std::collections::HashMap;
 
-const BASE_URL: &str = "https://lrclib.net/api";
+const DEFAULT_BASE_URL: &str = "https://lrclib.net";
 const DURATION_TOLERANCE_SECS: f32 = 2.0;
 
 #[derive(Debug, Deserialize)]
@@ -23,13 +23,19 @@ struct LrclibRecord {
     instrumental: bool,
 }
 
-pub struct Lrclib;
+pub struct Lrclib {
+    base_url: String,
+}
+
+impl Lrclib {
+    pub fn create(param: Option<&str>) -> Box<dyn LyricsProvider> {
+        Box::new(Self {
+            base_url: param.unwrap_or(DEFAULT_BASE_URL).to_string(),
+        })
+    }
+}
 
 impl LyricsProvider for Lrclib {
-    fn id(&self) -> &'static str {
-        "lrclib"
-    }
-
     fn fetch_lyrics(
         &self,
         track: &TrackInfo,
@@ -49,15 +55,19 @@ impl LyricsProvider for Lrclib {
             .collect::<Vec<_>>()
             .join(" ");
 
-        if let Some(record) =
-            get_by_metadata(&all_artists, &track.title, &track.album, track.duration)?
-            && let Some(result) = pick_text(record, cfg)
+        if let Some(record) = get_by_metadata(
+            &self.base_url,
+            &all_artists,
+            &track.title,
+            &track.album,
+            track.duration,
+        )? && let Some(result) = pick_text(record, cfg)
         {
             return Ok(Some(result));
         }
 
         let query = format!("{first_artist} {}", track.title);
-        if let Some(record) = search_by_query(&query, track.duration)?
+        if let Some(record) = search_by_query(&self.base_url, &query, track.duration)?
             && let Some(result) = pick_text(record, cfg)
         {
             return Ok(Some(result));
@@ -68,6 +78,7 @@ impl LyricsProvider for Lrclib {
 }
 
 fn get_by_metadata(
+    base_url: &str,
     artist: &str,
     title: &str,
     album: &str,
@@ -81,7 +92,7 @@ fn get_by_metadata(
     ])
     .map_err(|e| LyricsError::new(format!("lrclib: failed to encode query: {e}")))?;
 
-    let response = send_request(&format!("{}/get?{query}", BASE_URL))?;
+    let response = send_request(&format!("{base_url}/api/get?{query}"))?;
 
     match response.status_code {
         200 => serde_json::from_slice(&response.body)
@@ -94,11 +105,15 @@ fn get_by_metadata(
     }
 }
 
-fn search_by_query(q: &str, target_duration: f32) -> Result<Option<LrclibRecord>, LyricsError> {
+fn search_by_query(
+    base_url: &str,
+    q: &str,
+    target_duration: f32,
+) -> Result<Option<LrclibRecord>, LyricsError> {
     let query = serde_urlencoded::to_string([("q", q)])
         .map_err(|e| LyricsError::new(format!("lrclib: failed to encode search query: {e}")))?;
 
-    let response = send_request(&format!("{}/search?{query}", BASE_URL))?;
+    let response = send_request(&format!("{base_url}/api/search?{query}"))?;
 
     if response.status_code != 200 {
         return Err(LyricsError::new(format!(

@@ -52,11 +52,13 @@ struct DownloadResponse {
 
 pub struct Kugou;
 
-impl LyricsProvider for Kugou {
-    fn id(&self) -> &'static str {
-        "kugou"
+impl Kugou {
+    pub fn create(_param: Option<&str>) -> Box<dyn LyricsProvider> {
+        Box::new(Self)
     }
+}
 
+impl LyricsProvider for Kugou {
     fn fetch_lyrics(
         &self,
         track: &TrackInfo,

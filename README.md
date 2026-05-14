@@ -27,13 +27,22 @@ directly when available. This will only work if "Write to custom path" is disabl
 
 ## Providers
 
-At this time the following providers are available. Please report any issues you encounter with them.
+At this time, the following providers are available. Please report any issues you encounter while using them.
 
-| Provider   | Type           |
-| ---------- | -------------- |
-| lrclib     | plain + synced |
-| lyrics.ovh | plain          |
-| kugou      | synced         |
+You can optionally pass parameters to a provider by placing them in parentheses after the provider name.
+Providers with and without parameters can be mixed together in the same list.
+
+The following example will first try to fetch lyrics from `http://my_custom_lrclib.net`, then fall back to default `lrclib` and `lyrics.ovh` if no lyrics are found.
+
+```
+lrclib(http://my_custom_lrclib.net),lrclib,lyrics.ovh
+```
+
+| Provider   | Type           | Optional parameters |
+| ---------- | -------------- | ------------------- |
+| lrclib     | plain + synced | Custom base URL     |
+| lyrics.ovh | plain          |                     |
+| kugou      | synced         |                     |
 
 ## Path variables
 
@@ -41,11 +50,15 @@ Custom paths to write lyrics files to can be composed using path variables.
 
 Consider the following example:
 
-`_lyrics/{type}/{track:album}/{track:track_number:2} - {track:title}`.
+```
+_lyrics/{type}/{track:album}/{track:track_number:2} - {track:title}
+```
 
 This will be transfored into something like this:
 
-`<selected_library_root>/_lyrics/synced/The Razors Edge/01 - Thunderstruck.lrc`.
+```
+<selected_library_root>/_lyrics/synced/The Razors Edge/01 - Thunderstruck.lrc
+```
 
 Note that the extension is appended automatically based on the configuration and lyrics type.
 

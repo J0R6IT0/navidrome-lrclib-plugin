@@ -36,12 +36,14 @@ impl Lyrics for Plugin {
         let mut registry = ProviderRegistry::new();
         register_providers(&mut registry);
 
-        for provider_id in &cfg.providers {
-            let Some(provider) = registry.get(provider_id) else {
+        for entry in &cfg.providers {
+            let Some(provider) = registry.create(entry) else {
+                warn!("unknown provider '{}', skipping", entry);
                 continue;
             };
 
-            let Some((text, kind)) = fetch_from_provider(provider, &track, &cfg, provider_id)
+            let label = entry.to_string();
+            let Some((text, kind)) = fetch_from_provider(provider.as_ref(), &track, &cfg, &label)
             else {
                 continue;
             };

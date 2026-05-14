@@ -1,9 +1,12 @@
+use crate::config::ProviderEntry;
 use crate::providers::LyricsProvider;
 use std::collections::HashMap;
 
+type ProviderFactory = fn(Option<&str>) -> Box<dyn LyricsProvider>;
+
 #[derive(Default)]
 pub struct ProviderRegistry {
-    providers: HashMap<&'static str, Box<dyn LyricsProvider>>,
+    factories: HashMap<String, ProviderFactory>,
 }
 
 impl ProviderRegistry {
@@ -11,11 +14,12 @@ impl ProviderRegistry {
         Self::default()
     }
 
-    pub fn register(&mut self, provider: Box<dyn LyricsProvider>) {
-        self.providers.insert(provider.id(), provider);
+    pub fn register(&mut self, name: &str, factory: ProviderFactory) {
+        self.factories.insert(name.to_string(), factory);
     }
 
-    pub fn get(&self, id: &str) -> Option<&dyn LyricsProvider> {
-        self.providers.get(id).map(|p| p.as_ref())
+    pub fn create(&self, entry: &ProviderEntry) -> Option<Box<dyn LyricsProvider>> {
+        let factory = self.factories.get(&entry.name)?;
+        Some(factory(entry.param.as_deref()))
     }
 }

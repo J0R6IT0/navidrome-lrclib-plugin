@@ -1,22 +1,17 @@
 {
   "name": "Lyrics",
   "author": "Jorge Pardo",
-  "version": "5.0.1",
+  "version": "5.1.0",
   "description": "Fetch lyrics from multiple sources",
   "website": "https://github.com/J0R6IT0/navidrome-lyrics-plugin",
 
   "permissions": {
     "http": {
-      "reason": "To fetch lyrics from the internet",
-      "requiredHosts": [
-        "lrclib.net",
-        "api.lyrics.ovh",
-        "lyrics.kugou.com",
-        "mobilecdn.kugou.com"
-      ]
+      "reason": "To fetch lyrics from the internet. All hosts required for custom URLs.",
+      "requiredHosts": ["*"]
     },
     "library": {
-      "reason": "To save lyrics as .lrc files",
+      "reason": "To save lyrics as .lrc files.",
       "filesystem": true
     },
     "cache": {

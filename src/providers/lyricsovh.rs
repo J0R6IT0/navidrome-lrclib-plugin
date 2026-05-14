@@ -20,11 +20,13 @@ struct ApiResponse {
 
 pub struct LyricsOvh;
 
-impl LyricsProvider for LyricsOvh {
-    fn id(&self) -> &'static str {
-        "lyrics.ovh"
+impl LyricsOvh {
+    pub fn create(_param: Option<&str>) -> Box<dyn LyricsProvider> {
+        Box::new(Self)
     }
+}
 
+impl LyricsProvider for LyricsOvh {
     fn fetch_lyrics(
         &self,
         track: &TrackInfo,
