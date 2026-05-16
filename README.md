@@ -23,7 +23,7 @@ Make sure your Navidrome version is at least `v0.61.2`.
 TIP: If you are using the "Write lyrics to .lrc files" option, you can do `".lrc,nd-lyrics,<others...>"` so Navidrome reads the files
 directly when available. This will only work if "Write to custom path" is disabled.
 
-3. You may need to restart Navidrome for the plugin to be detected.
+3. You may need to restart Navidrome for the plugin to be detected. Don't forget to enable the plugin and configure it to your liking.
 
 ## Providers
 
