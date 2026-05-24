@@ -10,6 +10,7 @@ const MIN_CACHE_TTL: i64 = 1;
 const DEFAULT_PLAIN_EXTENSION: &str = "txt";
 const DEFAULT_SYNCED_EXTENSION: &str = "lrc";
 const DEFAULT_INSTRUMENTAL_EXTENSION: &str = "txt";
+const DEFAULT_INSTRUMENTAL_TEXT: &str = "Instrumental";
 const DEFAULT_FOLDER_TEMPLATE: &str = "_lyrics/{type}/{track:album_artist} - {track:album}/{track:disc_number:2} - {track:track_number:2} {track:title}";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -49,6 +50,7 @@ pub struct PluginConfig {
     pub write_to_specific_folder_library_id: Option<i32>,
     pub write_to_specific_folder_template: String,
     pub strip_section_labels: bool,
+    pub instrumental_text: String,
 }
 
 impl Default for PluginConfig {
@@ -69,6 +71,7 @@ impl Default for PluginConfig {
             write_to_specific_folder_library_id: None,
             write_to_specific_folder_template: DEFAULT_FOLDER_TEMPLATE.to_string(),
             strip_section_labels: false,
+            instrumental_text: DEFAULT_INSTRUMENTAL_TEXT.to_string(),
         }
     }
 }
@@ -97,6 +100,8 @@ impl PluginConfig {
             write_to_specific_folder_template: get_string("writeToSpecificFolderTemplate")?
                 .unwrap_or_else(|| DEFAULT_FOLDER_TEMPLATE.to_string()),
             strip_section_labels: get_bool("stripSectionLabels", false)?,
+            instrumental_text: get_string("instrumentalText")?
+                .unwrap_or_else(|| DEFAULT_INSTRUMENTAL_TEXT.to_string()),
         })
     }
 

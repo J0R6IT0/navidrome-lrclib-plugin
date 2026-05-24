@@ -62,16 +62,16 @@ This will be transfored into something like this:
 
 Note that the extension is appended automatically based on the configuration and lyrics type.
 
-| Variable             | Description                                   |
-| -------------------- | --------------------------------------------- |
-| {type}               | The type of lyrics ("plain" or "synced")      |
-| {track:id}           | The ID of the track                           |
-| {track:title}        | The title of the track                        |
-| {track:album}        | The name of the album this track belongs to   |
-| {track:artist}       | The artist of the track                       |
-| {track:album_artist} | The artist of the album this track belongs to |
-| {track:track_number} | The number of track in the album\*            |
-| {track:disc_number}  | The number of the disc in the album\*         |
+| Variable             | Description                                              |
+| -------------------- | -------------------------------------------------------- |
+| {type}               | The type of lyrics ("plain", "synced" or "instrumental") |
+| {track:id}           | The ID of the track                                      |
+| {track:title}        | The title of the track                                   |
+| {track:album}        | The name of the album this track belongs to              |
+| {track:artist}       | The artist of the track                                  |
+| {track:album_artist} | The artist of the album this track belongs to            |
+| {track:track_number} | The number of track in the album\*                       |
+| {track:disc_number}  | The number of the disc in the album\*                    |
 
 \* {track:track_number} and {track:disc_number} accept a padding argument to fill with 0s:
 

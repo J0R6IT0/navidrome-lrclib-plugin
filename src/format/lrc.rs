@@ -1,6 +1,4 @@
-use regex::Regex;
-
-pub fn sanitize_lrc(lrc: &str) -> String {
+pub fn sanitize(lrc: &str) -> String {
     const KEEP_TAGS: &[&str] = &["offset"];
 
     const CREDIT_PREFIXES: &[&str] = &[
@@ -34,27 +32,11 @@ pub fn sanitize_lrc(lrc: &str) -> String {
 
     lrc.lines()
         .filter(|line| {
-            let trimmed = line.trim();
+            let trimmed = line.trim_start_matches('\u{feff}').trim();
             let mut text = trimmed;
 
-            if let Some(rest) = trimmed.strip_prefix('[')
-                && let Some(bracket_end) = rest.find(']')
-            {
-                let content = &rest[..bracket_end];
-                text = &rest[bracket_end + 1..];
-
-                let time_tag_secs = content.split_once(':').and_then(|(left, right)| {
-                    if left.chars().all(|c| c.is_ascii_digit())
-                        && right.contains('.')
-                        && right.chars().all(|c| c.is_ascii_digit() || c == '.')
-                    {
-                        let mins = left.parse::<f64>().unwrap_or(0.0);
-                        let secs = right.parse::<f64>().unwrap_or(0.0);
-                        Some(mins * 60.0 + secs)
-                    } else {
-                        None
-                    }
-                });
+            if let Some((time_tag_secs, parsed_text)) = parse_line(trimmed) {
+                text = parsed_text;
 
                 if let Some(total_secs) = time_tag_secs {
                     if !first_time_tag_processed {
@@ -67,16 +49,23 @@ pub fn sanitize_lrc(lrc: &str) -> String {
                             return false;
                         }
                     }
-                } else if let Some((key, _)) = content.split_once(':') {
-                    if !KEEP_TAGS.contains(&key) {
+                } else if let Some(rest) = trimmed.strip_prefix('[')
+                    && let Some(bracket_end) = rest.find(']')
+                {
+                    let content = &rest[..bracket_end];
+
+                    if let Some((key, _)) = content.split_once(':') {
+                        if !KEEP_TAGS.contains(&key) {
+                            return false;
+                        }
+                    } else {
                         return false;
                     }
-                } else {
-                    return false;
                 }
             }
 
             let text = text.trim_start();
+
             for prefix in CREDIT_PREFIXES {
                 if let Some(head) = text.get(..prefix.len()) {
                     let rest = &text[prefix.len()..];
@@ -95,86 +84,105 @@ pub fn sanitize_lrc(lrc: &str) -> String {
         .join("\n")
 }
 
-pub fn strip_section_labels(lyrics: &str) -> String {
-    let re = Regex::new(
-         r"(?i)\[(?:verse|pre[- ]?verse|chorus|pre[- ]?chorus|post[- ]?chorus|bridge|hook|refrain|intro|outro|coda|interlude|instrumental|breakdown|solo|drop|chant|skit|ad-?lib|overture|finale|couplet)\b[^\]]*\]"
-     ).unwrap();
+pub fn is_instrumental(lyrics: &str) -> bool {
+    const INSTRUMENTAL_MARKERS: &[&str] = &["instrumental", "纯音乐", "no lyrics"];
 
-    lyrics
+    let timed_lines = lyrics
         .lines()
-        .map(|line| {
-            let stripped = re.replace_all(line, "").to_string();
+        .filter(|line| matches!(parse_line(line), Some((Some(_), _))))
+        .count();
 
-            let cleaned = stripped.replace("  ", " ");
+    if timed_lines > 3 {
+        return false;
+    }
 
-            if line.trim_start().starts_with('[') {
-                cleaned.trim().to_string()
-            } else {
-                cleaned.trim_end().to_string()
-            }
-        })
-        .filter(|line| !line.trim().is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
+    let lower = lyrics.to_lowercase();
+
+    INSTRUMENTAL_MARKERS.iter().any(|m| lower.contains(m))
+}
+
+fn parse_line(line: &str) -> Option<(Option<f64>, &str)> {
+    let trimmed = line.trim_start_matches('\u{feff}').trim();
+
+    let rest = trimmed.strip_prefix('[')?;
+    let bracket_end = rest.find(']')?;
+
+    let content = &rest[..bracket_end];
+    let text = &rest[bracket_end + 1..];
+
+    let time_tag_secs = content.split_once(':').and_then(|(left, right)| {
+        if left.chars().all(|c| c.is_ascii_digit())
+            && right.contains('.')
+            && right.chars().all(|c| c.is_ascii_digit() || c == '.')
+        {
+            let mins = left.parse::<f64>().ok()?;
+            let secs = right.parse::<f64>().ok()?;
+            Some(mins * 60.0 + secs)
+        } else {
+            None
+        }
+    });
+
+    Some((time_tag_secs, text))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::sanitize_lrc;
-    use super::strip_section_labels;
+    use super::is_instrumental;
+    use super::sanitize;
 
-    mod sanitize_lrc_tests {
-        use super::sanitize_lrc;
+    mod sanitize_tests {
+        use super::sanitize;
 
         #[test]
         fn test_metadata_tags_stripped() {
             let input = "[ar:Artist Name]\n[al:Album]\n[ti:Song Title]\n[00:10.00] Hello";
-            assert_eq!(sanitize_lrc(input), "[00:10.00] Hello");
+            assert_eq!(sanitize(input), "[00:10.00] Hello");
         }
 
         #[test]
         fn test_offset_tag_kept() {
             let input = "[offset:-500]\n[ar:Artist]\n[00:10.00] Hello";
-            assert_eq!(sanitize_lrc(input), "[offset:-500]\n[00:10.00] Hello");
+            assert_eq!(sanitize(input), "[offset:-500]\n[00:10.00] Hello");
         }
 
         #[test]
         fn test_standalone_bracket_without_colon_stripped() {
             let input = "[SomethingWithoutColon]\n[00:10.00] Hello";
-            assert_eq!(sanitize_lrc(input), "[00:10.00] Hello");
+            assert_eq!(sanitize(input), "[00:10.00] Hello");
         }
 
         #[test]
         fn test_regular_lyric_lines_kept() {
             let input = "[00:10.00] Hello world\n[00:15.00] Foo bar";
             assert_eq!(
-                sanitize_lrc(input),
+                sanitize(input),
                 "[00:10.00] Hello world\n[00:15.00] Foo bar"
             );
         }
 
         #[test]
         fn test_empty_input() {
-            assert_eq!(sanitize_lrc(""), "");
+            assert_eq!(sanitize(""), "");
         }
 
         #[test]
         fn test_first_time_tag_title_pattern_at_under_5s_is_filtered() {
             let input = "[00:01.00] Artist - Title\n[00:05.00] First verse";
-            assert_eq!(sanitize_lrc(input), "[00:05.00] First verse");
+            assert_eq!(sanitize(input), "[00:05.00] First verse");
         }
 
         #[test]
         fn test_first_time_tag_no_dash_is_kept() {
             let input = "[00:01.00] First verse";
-            assert_eq!(sanitize_lrc(input), "[00:01.00] First verse");
+            assert_eq!(sanitize(input), "[00:01.00] First verse");
         }
 
         #[test]
         fn test_first_time_tag_title_pattern_at_exactly_5s_is_kept() {
             let input = "[00:05.00] Artist - Title\n[00:10.00] Hello";
             assert_eq!(
-                sanitize_lrc(input),
+                sanitize(input),
                 "[00:05.00] Artist - Title\n[00:10.00] Hello"
             );
         }
@@ -183,7 +191,7 @@ mod tests {
         fn test_second_time_tag_title_pattern_is_kept() {
             let input = "[00:01.00] First verse\n[00:03.00] Artist - Title";
             assert_eq!(
-                sanitize_lrc(input),
+                sanitize(input),
                 "[00:01.00] First verse\n[00:03.00] Artist - Title"
             );
         }
@@ -191,32 +199,32 @@ mod tests {
         #[test]
         fn test_non_tagged_credit_line_filtered() {
             let input = "Lyrics by: Someone\n[00:05.00] Hello";
-            assert_eq!(sanitize_lrc(input), "[00:05.00] Hello");
+            assert_eq!(sanitize(input), "[00:05.00] Hello");
         }
 
         #[test]
         fn test_time_tagged_credit_line_filtered() {
             let input = "[00:01.00] Lyrics by: Someone\n[00:05.00] Hello";
-            assert_eq!(sanitize_lrc(input), "[00:05.00] Hello");
+            assert_eq!(sanitize(input), "[00:05.00] Hello");
         }
 
         #[test]
         fn test_credit_with_fullwidth_colon_filtered() {
             let input = "Written by\u{FF1A} Someone\n[00:05.00] Hello";
-            assert_eq!(sanitize_lrc(input), "[00:05.00] Hello");
+            assert_eq!(sanitize(input), "[00:05.00] Hello");
         }
 
         #[test]
         fn test_multiple_credits_filtered() {
             let input =
                 "[00:01.00] Music by: Composer\n[00:02.00] Arranged by: Arranger\n[00:10.00] Verse";
-            assert_eq!(sanitize_lrc(input), "[00:10.00] Verse");
+            assert_eq!(sanitize(input), "[00:10.00] Verse");
         }
 
         #[test]
         fn test_credit_prefix_case_insensitive() {
             let input = "LYRICS BY: Someone\n[00:05.00] Hello";
-            assert_eq!(sanitize_lrc(input), "[00:05.00] Hello");
+            assert_eq!(sanitize(input), "[00:05.00] Hello");
         }
 
         #[test]
@@ -231,71 +239,80 @@ mod tests {
                 "[00:20.00] World"
             );
             assert_eq!(
-                sanitize_lrc(input),
+                sanitize(input),
                 "[offset:500]\n[00:15.00] Hello\n[00:20.00] World"
             );
         }
     }
 
-    mod strip_section_labels_tests {
-        use super::strip_section_labels;
+    mod is_instrumental_tests {
+        use super::is_instrumental;
 
         #[test]
-        fn test_basic_removal() {
-            let input = "[Verse 1]\nHello there\n[Chorus]\nWe will rock you";
-            let expected = "Hello there\nWe will rock you";
-            assert_eq!(strip_section_labels(input), expected);
+        fn test_detects_plain_instrumental() {
+            assert!(is_instrumental("Instrumental"));
         }
 
         #[test]
-        fn test_variants_and_suffixes() {
-            let input =
-                "[Verse 2]\n[Pre-Chorus: Lead]\n[Hook - Artist]\n[Chorus 3x]\n[Outro (Fade)]";
-            let expected = "";
-            assert_eq!(strip_section_labels(input), expected);
+        fn test_detects_chinese_instrumental() {
+            assert!(is_instrumental("[00:01.00]纯音乐，请欣赏"));
         }
 
         #[test]
-        fn test_lrc_format_preserves_timestamps() {
-            let input = "[00:10.00][Verse 1]First line\n[00:15.00][Chorus]Second line";
-            let expected = "[00:10.00]First line\n[00:15.00]Second line";
-            assert_eq!(strip_section_labels(input), expected);
+        fn test_detects_no_lyrics() {
+            assert!(is_instrumental("[00:00.00]No Lyrics"));
         }
 
         #[test]
-        fn test_case_insensitivity() {
-            let input = "[VERSE 1]\nHello\n[chorus]\nRock you";
-            let expected = "Hello\nRock you";
-            assert_eq!(strip_section_labels(input), expected);
+        fn test_metadata_lines_do_not_count() {
+            let input = concat!(
+                "[ar:test]\n",
+                "[ti:test]\n",
+                "[offset:0]\n",
+                "[00:01.00]纯音乐，请欣赏\n"
+            );
+
+            assert!(is_instrumental(input));
         }
 
         #[test]
-        fn test_word_boundary_safety() {
-            let input = "[00:10.00]Breaking the [Chains]\n[Outrageous] behavior";
-            let expected = "[00:10.00]Breaking the [Chains]\n[Outrageous] behavior";
-            assert_eq!(strip_section_labels(input), expected);
+        fn test_more_than_three_timed_lines_is_not_instrumental() {
+            let input = concat!(
+                "[00:01.00]纯音乐，请欣赏\n",
+                "[00:02.00]...\n",
+                "[00:03.00]...\n",
+                "[00:04.00]...\n"
+            );
+
+            assert!(!is_instrumental(input));
         }
 
         #[test]
-        fn test_mid_line_labels() {
-            let input = "[Chorus] We will [Chorus] rock you";
-            let expected = "We will rock you";
-            assert_eq!(strip_section_labels(input), expected);
+        fn test_non_timed_lines_do_not_count() {
+            let input = concat!("hello\n", "world\n", "[00:01.00]instrumental\n");
+
+            assert!(is_instrumental(input));
         }
 
         #[test]
-        fn test_hyphenated_variants() {
-            let input =
-                "[Pre-Chorus]\nLet's go\n[Pre Chorus]\nLet's go again\n[Prechorus]\nOne more time";
-            let expected = "Let's go\nLet's go again\nOne more time";
-            assert_eq!(strip_section_labels(input), expected);
+        fn test_bom_is_handled() {
+            let input = "\u{feff}[00:01.00]纯音乐";
+
+            assert!(is_instrumental(input));
         }
 
         #[test]
-        fn test_ad_lib_variant() {
-            let input = "[Ad-lib] Ooh yeah\n[Adlib] Aah";
-            let expected = "Ooh yeah\nAah";
-            assert_eq!(strip_section_labels(input), expected);
+        fn test_regular_lyrics_not_detected() {
+            let input = concat!("[00:01.00]Hello\n", "[00:05.00]World\n");
+
+            assert!(!is_instrumental(input));
+        }
+
+        #[test]
+        fn test_offset_tag_is_not_counted_as_timed_line() {
+            let input = concat!("[offset:0]\n", "[00:01.00]instrumental\n");
+
+            assert!(is_instrumental(input));
         }
     }
 }

@@ -68,10 +68,15 @@ impl LyricsCache {
             .find_map(|&kind| self.get(track_id, kind))
     }
 
-    pub fn write(&self, track_id: &str, lyrics: &Lyrics) -> Result<(), LyricsError> {
+    pub fn write(
+        &self,
+        track_id: &str,
+        lyrics: &Lyrics,
+        cfg: &PluginConfig,
+    ) -> Result<(), LyricsError> {
         let bytes = match lyrics {
             Lyrics::Instrumental => SENTINEL.to_vec(),
-            _ => compress(lyrics.text().as_bytes())
+            _ => compress(lyrics.text(cfg).as_bytes())
                 .map_err(|e| LyricsError::new(format!("compression failed: {e}")))?,
         };
 

@@ -24,7 +24,7 @@ pub fn write(track: &TrackInfo, lyrics: &Lyrics, cfg: &PluginConfig) -> Result<(
             .map_err(|e| LyricsError::new(format!("failed to create lyrics directory: {e}")))?;
     }
 
-    fs::write(&path, lyrics.text())
+    fs::write(&path, lyrics.text(cfg).as_bytes())
         .map_err(|e| LyricsError::new(format!("failed to write lyrics file: {e}")))?;
 
     Ok(())
