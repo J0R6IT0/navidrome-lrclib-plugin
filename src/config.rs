@@ -4,6 +4,7 @@ use nd_pdk::{host::config, lyrics::Error as LyricsError};
 use std::collections::HashSet;
 
 const DEFAULT_CACHE_TTL: i64 = 168;
+const DEFAULT_NEGATIVE_CACHE_TTL: i64 = 24;
 const MIN_CACHE_TTL: i64 = 1;
 
 const DEFAULT_PLAIN_EXTENSION: &str = "txt";
@@ -39,6 +40,8 @@ pub struct PluginConfig {
     pub synced_extension: String,
     pub enable_cache: bool,
     pub cache_ttl_hours: i64,
+    pub negative_cache: bool,
+    pub negative_cache_ttl_hours: i64,
     pub providers: Vec<ProviderEntry>,
     pub write_to_specific_folder: bool,
     pub write_to_specific_folder_library_id: Option<i32>,
@@ -56,6 +59,8 @@ impl Default for PluginConfig {
             synced_extension: DEFAULT_SYNCED_EXTENSION.to_string(),
             enable_cache: true,
             cache_ttl_hours: DEFAULT_CACHE_TTL,
+            negative_cache: true,
+            negative_cache_ttl_hours: DEFAULT_NEGATIVE_CACHE_TTL,
             providers: vec![],
             write_to_specific_folder: false,
             write_to_specific_folder_library_id: None,
@@ -75,6 +80,8 @@ impl PluginConfig {
             synced_extension: resolve_extension("syncedExtension", DEFAULT_SYNCED_EXTENSION)?,
             enable_cache: get_bool("enableCache", true)?,
             cache_ttl_hours: resolve_cache_ttl()?,
+            negative_cache: get_bool("negativeCache", true)?,
+            negative_cache_ttl_hours: resolve_negative_cache_ttl()?,
             providers: resolve_providers()?,
             write_to_specific_folder: get_bool("writeToSpecificFolder", false)?,
             write_to_specific_folder_library_id: get_optional_i32(
@@ -145,6 +152,19 @@ fn resolve_cache_ttl() -> Result<i64, LyricsError> {
     if raw < MIN_CACHE_TTL {
         warn!(
             "cacheTtlHours {raw} is below minimum of {MIN_CACHE_TTL}, using {MIN_CACHE_TTL} instead"
+        );
+        return Ok(MIN_CACHE_TTL);
+    }
+
+    Ok(raw)
+}
+
+fn resolve_negative_cache_ttl() -> Result<i64, LyricsError> {
+    let raw = get_i64("negativeCacheTtlHours", DEFAULT_NEGATIVE_CACHE_TTL)?;
+
+    if raw < MIN_CACHE_TTL {
+        warn!(
+            "negativeCacheTtlHours {raw} is below minimum of {MIN_CACHE_TTL}, using {MIN_CACHE_TTL} instead"
         );
         return Ok(MIN_CACHE_TTL);
     }

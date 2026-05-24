@@ -6,6 +6,9 @@ use std::io::{Read, Write};
 
 const PREFIX_SYNCED: &str = "lrc:synced:";
 const PREFIX_PLAIN: &str = "lrc:plain:";
+const PREFIX_NEGATIVE: &str = "lrc:miss:";
+
+const NEGATIVE_SENTINEL: &[u8] = &[1u8];
 
 fn cache_key(track_id: &str, kind: LyricsType) -> String {
     let prefix = match kind {
@@ -15,8 +18,13 @@ fn cache_key(track_id: &str, kind: LyricsType) -> String {
     format!("{prefix}{track_id}")
 }
 
+fn negative_cache_key(track_id: &str) -> String {
+    format!("{PREFIX_NEGATIVE}{track_id}")
+}
+
 pub struct LyricsCache {
     ttl: i64,
+    negative_ttl: i64,
 }
 
 #[derive(Debug)]
@@ -26,8 +34,11 @@ pub struct CachedLyrics {
 }
 
 impl LyricsCache {
-    pub fn new(ttl_seconds: i64) -> Self {
-        Self { ttl: ttl_seconds }
+    pub fn new(ttl_seconds: i64, negative_ttl_seconds: i64) -> Self {
+        Self {
+            ttl: ttl_seconds,
+            negative_ttl: negative_ttl_seconds,
+        }
     }
 
     pub fn read(&self, track_id: &str, cfg: &PluginConfig) -> Option<CachedLyrics> {
@@ -44,6 +55,22 @@ impl LyricsCache {
             .map_err(|e| LyricsError::new(format!("failed to write to cache: {e}")))?;
 
         Ok(())
+    }
+
+    pub fn is_negative(&self, track_id: &str) -> bool {
+        cache::get_bytes(&negative_cache_key(track_id))
+            .ok()
+            .flatten()
+            .is_some()
+    }
+
+    pub fn write_negative(&self, track_id: &str) -> Result<(), LyricsError> {
+        cache::set_bytes(
+            &negative_cache_key(track_id),
+            NEGATIVE_SENTINEL.to_vec(),
+            self.negative_ttl,
+        )
+        .map_err(|e| LyricsError::new(format!("failed to write negative cache entry: {e}")))
     }
 
     fn get(&self, track_id: &str, kind: LyricsType) -> Option<CachedLyrics> {
@@ -87,6 +114,11 @@ mod tests {
     #[test]
     fn test_cache_key_plain() {
         assert_eq!(cache_key("abc123", LyricsType::Plain), "lrc:plain:abc123");
+    }
+
+    #[test]
+    fn test_negative_cache_key() {
+        assert_eq!(negative_cache_key("abc123"), "lrc:miss:abc123");
     }
 
     #[test]
