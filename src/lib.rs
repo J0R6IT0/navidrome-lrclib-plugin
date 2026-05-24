@@ -26,7 +26,9 @@ impl Lyrics for Plugin {
     fn get_lyrics(&self, req: GetLyricsRequest) -> Result<GetLyricsResponse, LyricsError> {
         let track = req.track;
         let cfg = PluginConfig::load()?;
-        let cache = cfg.enable_cache.then(|| LyricsCache::new(cfg.cache_ttl));
+        let cache = cfg
+            .enable_cache
+            .then(|| LyricsCache::new(cfg.cache_ttl_hours * 3600));
 
         if let Some(cached) = cache.as_ref().and_then(|c| c.read(&track.id, &cfg)) {
             write_lyrics_if_enabled(&track, &cached.text, cached.kind, &cfg);

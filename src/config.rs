@@ -3,8 +3,8 @@ use extism_pdk::warn;
 use nd_pdk::{host::config, lyrics::Error as LyricsError};
 use std::collections::HashSet;
 
-const DEFAULT_CACHE_TTL: i64 = 86_400;
-const MIN_CACHE_TTL: i64 = 60;
+const DEFAULT_CACHE_TTL: i64 = 168;
+const MIN_CACHE_TTL: i64 = 1;
 
 const DEFAULT_PLAIN_EXTENSION: &str = "txt";
 const DEFAULT_SYNCED_EXTENSION: &str = "lrc";
@@ -38,7 +38,7 @@ pub struct PluginConfig {
     pub plain_extension: String,
     pub synced_extension: String,
     pub enable_cache: bool,
-    pub cache_ttl: i64,
+    pub cache_ttl_hours: i64,
     pub providers: Vec<ProviderEntry>,
     pub write_to_specific_folder: bool,
     pub write_to_specific_folder_library_id: Option<i32>,
@@ -55,7 +55,7 @@ impl Default for PluginConfig {
             plain_extension: DEFAULT_PLAIN_EXTENSION.to_string(),
             synced_extension: DEFAULT_SYNCED_EXTENSION.to_string(),
             enable_cache: true,
-            cache_ttl: DEFAULT_CACHE_TTL,
+            cache_ttl_hours: DEFAULT_CACHE_TTL,
             providers: vec![],
             write_to_specific_folder: false,
             write_to_specific_folder_library_id: None,
@@ -74,7 +74,7 @@ impl PluginConfig {
             plain_extension: resolve_extension("plainExtension", DEFAULT_PLAIN_EXTENSION)?,
             synced_extension: resolve_extension("syncedExtension", DEFAULT_SYNCED_EXTENSION)?,
             enable_cache: get_bool("enableCache", true)?,
-            cache_ttl: resolve_cache_ttl()?,
+            cache_ttl_hours: resolve_cache_ttl()?,
             providers: resolve_providers()?,
             write_to_specific_folder: get_bool("writeToSpecificFolder", false)?,
             write_to_specific_folder_library_id: get_optional_i32(
@@ -140,10 +140,12 @@ fn resolve_extension(key: &str, default_value: &str) -> Result<String, LyricsErr
 }
 
 fn resolve_cache_ttl() -> Result<i64, LyricsError> {
-    let raw = get_i64("cacheTtl", DEFAULT_CACHE_TTL)?;
+    let raw = get_i64("cacheTtlHours", DEFAULT_CACHE_TTL)?;
 
     if raw < MIN_CACHE_TTL {
-        warn!("cacheTtl {raw} is below minimum of {MIN_CACHE_TTL}, using {MIN_CACHE_TTL} instead");
+        warn!(
+            "cacheTtlHours {raw} is below minimum of {MIN_CACHE_TTL}, using {MIN_CACHE_TTL} instead"
+        );
         return Ok(MIN_CACHE_TTL);
     }
 

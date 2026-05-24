@@ -74,12 +74,12 @@
           "default": true
         },
 
-        "cacheTtl": {
+        "cacheTtlHours": {
           "type": "integer",
-          "title": "Cache TTL (seconds)",
-          "minimum": 60,
-          "default": 86400,
-          "description": "How long cached lyrics remain valid. Default is 24 hours."
+          "title": "Cache TTL (hours)",
+          "minimum": 1,
+          "default": 168,
+          "description": "How long cached lyrics remain valid. Default is 7 days."
         },
 
         "writeLyrics": {
@@ -198,7 +198,7 @@
             },
             {
               "type": "Control",
-              "scope": "#/properties/cacheTtl",
+              "scope": "#/properties/cacheTtlHours",
               "rule": {
                 "effect": "SHOW",
                 "condition": {
