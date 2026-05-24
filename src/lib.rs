@@ -88,7 +88,14 @@ fn fetch_from_providers(track: &TrackInfo, cfg: &PluginConfig) -> FetchOutcome {
         match provider.fetch_lyrics(track, cfg) {
             Ok(Some(mut lyrics)) => {
                 lyrics.sanitize(cfg);
-                return FetchOutcome::Found(lyrics);
+                if lyrics.is_empty() {
+                    warn!(
+                        "provider '{}' returned empty lyrics after sanitization, skipping",
+                        entry
+                    );
+                } else {
+                    return FetchOutcome::Found(lyrics);
+                }
             }
             Ok(None) => {}
             Err(e) => {

@@ -45,6 +45,13 @@ impl Lyrics {
             Lyrics::Instrumental => {}
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Lyrics::Synced(s) | Lyrics::Plain(s) => s.trim().is_empty(),
+            Lyrics::Instrumental => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
