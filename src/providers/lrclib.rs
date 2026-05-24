@@ -1,7 +1,7 @@
 use crate::{
     config::PluginConfig,
     providers::{LyricsProvider, USER_AGENT},
-    types::LyricsType,
+    types::{Lyrics, LyricsKind},
 };
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
@@ -40,7 +40,7 @@ impl LyricsProvider for Lrclib {
         &self,
         track: &TrackInfo,
         cfg: &PluginConfig,
-    ) -> Result<Option<(String, LyricsType)>, LyricsError> {
+    ) -> Result<Option<Lyrics>, LyricsError> {
         let first_artist = track
             .artists
             .first()
@@ -148,22 +148,23 @@ fn send_request(url: &str) -> Result<HTTPResponse, LyricsError> {
     .ok_or_else(|| LyricsError::new("lrclib: received empty HTTP response"))
 }
 
-fn pick_text(record: LrclibRecord, cfg: &PluginConfig) -> Option<(String, LyricsType)> {
+fn pick_text(record: LrclibRecord, cfg: &PluginConfig) -> Option<Lyrics> {
     if record.instrumental {
-        return Some(("Instrumental".to_string(), LyricsType::Plain));
+        return Some(Lyrics::Instrumental);
     }
 
     let synced = record.synced_lyrics.filter(|s| !s.trim().is_empty());
     let plain = record.plain_lyrics.filter(|s| !s.trim().is_empty());
 
     for &kind in cfg.resolve_order() {
-        let text = match kind {
-            LyricsType::Synced => synced.as_ref(),
-            LyricsType::Plain => plain.as_ref(),
+        let lyrics = match kind {
+            LyricsKind::Synced => synced.as_ref().map(|t| Lyrics::Synced(t.clone())),
+            LyricsKind::Plain => plain.as_ref().map(|t| Lyrics::Plain(t.clone())),
+            LyricsKind::Instrumental => unreachable!(),
         };
 
-        if let Some(text) = text {
-            return Some((text.clone(), kind));
+        if let Some(lyrics) = lyrics {
+            return Some(lyrics);
         }
     }
 
@@ -174,7 +175,7 @@ fn pick_text(record: LrclibRecord, cfg: &PluginConfig) -> Option<(String, Lyrics
 mod tests {
     use super::*;
 
-    fn make_config(priority: Vec<LyricsType>) -> PluginConfig {
+    fn make_config(priority: Vec<LyricsKind>) -> PluginConfig {
         PluginConfig {
             lyrics_type_priority: priority,
             ..Default::default()
@@ -183,7 +184,7 @@ mod tests {
 
     #[test]
     fn test_pick_text_synced_priority() {
-        let cfg = make_config(vec![LyricsType::Synced, LyricsType::Plain]);
+        let cfg = make_config(vec![LyricsKind::Synced, LyricsKind::Plain]);
         let record = LrclibRecord {
             synced_lyrics: Some("[00:00.00] Hello".to_string()),
             plain_lyrics: Some("Hello".to_string()),
@@ -192,15 +193,12 @@ mod tests {
         };
 
         let result = pick_text(record, &cfg);
-        assert_eq!(
-            result,
-            Some(("[00:00.00] Hello".to_string(), LyricsType::Synced))
-        );
+        assert_eq!(result, Some(Lyrics::Synced("[00:00.00] Hello".to_string())));
     }
 
     #[test]
     fn test_pick_text_falls_back_to_plain() {
-        let cfg = make_config(vec![LyricsType::Synced, LyricsType::Plain]);
+        let cfg = make_config(vec![LyricsKind::Synced, LyricsKind::Plain]);
         let record = LrclibRecord {
             synced_lyrics: None,
             plain_lyrics: Some("Hello".to_string()),
@@ -209,12 +207,12 @@ mod tests {
         };
 
         let result = pick_text(record, &cfg);
-        assert_eq!(result, Some(("Hello".to_string(), LyricsType::Plain)));
+        assert_eq!(result, Some(Lyrics::Plain("Hello".to_string())));
     }
 
     #[test]
     fn test_pick_text_skips_empty_synced() {
-        let cfg = make_config(vec![LyricsType::Synced, LyricsType::Plain]);
+        let cfg = make_config(vec![LyricsKind::Synced, LyricsKind::Plain]);
         let record = LrclibRecord {
             synced_lyrics: Some("   ".to_string()), // whitespace only
             plain_lyrics: Some("Hello".to_string()),
@@ -223,12 +221,12 @@ mod tests {
         };
 
         let result = pick_text(record, &cfg);
-        assert_eq!(result, Some(("Hello".to_string(), LyricsType::Plain)));
+        assert_eq!(result, Some(Lyrics::Plain("Hello".to_string())));
     }
 
     #[test]
     fn test_pick_text_instrumental() {
-        let cfg = make_config(vec![LyricsType::Synced, LyricsType::Plain]);
+        let cfg = make_config(vec![LyricsKind::Synced, LyricsKind::Plain]);
         let record = LrclibRecord {
             synced_lyrics: None,
             plain_lyrics: None,
@@ -237,15 +235,12 @@ mod tests {
         };
 
         let result = pick_text(record, &cfg);
-        assert_eq!(
-            result,
-            Some(("Instrumental".to_string(), LyricsType::Plain))
-        );
+        assert_eq!(result, Some(Lyrics::Instrumental));
     }
 
     #[test]
     fn test_pick_text_no_lyrics_available() {
-        let cfg = make_config(vec![LyricsType::Synced, LyricsType::Plain]);
+        let cfg = make_config(vec![LyricsKind::Synced, LyricsKind::Plain]);
         let record = LrclibRecord {
             synced_lyrics: None,
             plain_lyrics: None,

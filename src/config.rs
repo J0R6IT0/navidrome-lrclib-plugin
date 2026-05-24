@@ -1,4 +1,4 @@
-use crate::types::LyricsType;
+use crate::types::LyricsKind;
 use extism_pdk::warn;
 use nd_pdk::{host::config, lyrics::Error as LyricsError};
 use std::collections::HashSet;
@@ -9,6 +9,7 @@ const MIN_CACHE_TTL: i64 = 1;
 
 const DEFAULT_PLAIN_EXTENSION: &str = "txt";
 const DEFAULT_SYNCED_EXTENSION: &str = "lrc";
+const DEFAULT_INSTRUMENTAL_EXTENSION: &str = "txt";
 const DEFAULT_FOLDER_TEMPLATE: &str = "_lyrics/{type}/{track:album_artist} - {track:album}/{track:disc_number:2} - {track:track_number:2} {track:title}";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -33,11 +34,12 @@ impl std::fmt::Display for ProviderEntry {
 }
 
 pub struct PluginConfig {
-    pub lyrics_type_priority: Vec<LyricsType>,
+    pub lyrics_type_priority: Vec<LyricsKind>,
     pub write_lyrics: bool,
     pub overwrite_lyrics: bool,
     pub plain_extension: String,
     pub synced_extension: String,
+    pub instrumental_extension: String,
     pub enable_cache: bool,
     pub cache_ttl_hours: i64,
     pub negative_cache: bool,
@@ -57,6 +59,7 @@ impl Default for PluginConfig {
             overwrite_lyrics: false,
             plain_extension: DEFAULT_PLAIN_EXTENSION.to_string(),
             synced_extension: DEFAULT_SYNCED_EXTENSION.to_string(),
+            instrumental_extension: DEFAULT_INSTRUMENTAL_EXTENSION.to_string(),
             enable_cache: true,
             cache_ttl_hours: DEFAULT_CACHE_TTL,
             negative_cache: true,
@@ -78,6 +81,10 @@ impl PluginConfig {
             overwrite_lyrics: get_bool("overwriteLyrics", false)?,
             plain_extension: resolve_extension("plainExtension", DEFAULT_PLAIN_EXTENSION)?,
             synced_extension: resolve_extension("syncedExtension", DEFAULT_SYNCED_EXTENSION)?,
+            instrumental_extension: resolve_extension(
+                "instrumentalExtension",
+                DEFAULT_INSTRUMENTAL_EXTENSION,
+            )?,
             enable_cache: get_bool("enableCache", true)?,
             cache_ttl_hours: resolve_cache_ttl()?,
             negative_cache: get_bool("negativeCache", true)?,
@@ -93,21 +100,21 @@ impl PluginConfig {
         })
     }
 
-    pub fn resolve_order(&self) -> &[LyricsType] {
+    pub fn resolve_order(&self) -> &[LyricsKind] {
         &self.lyrics_type_priority
     }
 
     #[allow(dead_code)]
     pub fn wants_synced(&self) -> bool {
-        self.lyrics_type_priority.contains(&LyricsType::Synced)
+        self.lyrics_type_priority.contains(&LyricsKind::Synced)
     }
 
     pub fn wants_plain(&self) -> bool {
-        self.lyrics_type_priority.contains(&LyricsType::Plain)
+        self.lyrics_type_priority.contains(&LyricsKind::Plain)
     }
 }
 
-fn resolve_lyrics_type_priority() -> Result<Vec<LyricsType>, LyricsError> {
+fn resolve_lyrics_type_priority() -> Result<Vec<LyricsKind>, LyricsError> {
     let want_synced = get_bool("lyricsSynced", true)?;
     let want_plain = get_bool("lyricsPlain", true)?;
     let prefers_synced_first = get_string("lyricsPriority")?.as_deref() != Some("plain");
@@ -115,15 +122,15 @@ fn resolve_lyrics_type_priority() -> Result<Vec<LyricsType>, LyricsError> {
     let mut priority = Vec::new();
 
     if want_synced {
-        priority.push(LyricsType::Synced);
+        priority.push(LyricsKind::Synced);
     }
     if want_plain {
-        priority.push(LyricsType::Plain);
+        priority.push(LyricsKind::Plain);
     }
 
     if priority.is_empty() {
         warn!("no lyrics types selected, defaulting to synced + plain");
-        priority = vec![LyricsType::Synced, LyricsType::Plain];
+        priority = vec![LyricsKind::Synced, LyricsKind::Plain];
     }
 
     if priority.len() == 2 && !prefers_synced_first {

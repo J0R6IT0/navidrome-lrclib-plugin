@@ -116,6 +116,13 @@
           "description": "File extension for synced lyrics files."
         },
 
+        "instrumentalExtension": {
+          "type": "string",
+          "title": "Instrumental lyrics extension",
+          "default": "txt",
+          "description": "File extension for instrumental lyrics files."
+        },
+
         "overwriteLyrics": {
           "type": "boolean",
           "title": "Overwrite existing lyrics files",
@@ -282,6 +289,10 @@
                 {
                   "type": "Control",
                   "scope": "#/properties/syncedExtension"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/instrumentalExtension"
                 }
               ],
               "rule": {

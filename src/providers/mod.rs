@@ -2,7 +2,7 @@ use crate::{
     config::PluginConfig,
     providers::{kugou::Kugou, lrclib::Lrclib, lyricsovh::LyricsOvh},
     registry::ProviderRegistry,
-    types::LyricsType,
+    types::Lyrics,
 };
 use nd_pdk::lyrics::{Error, TrackInfo};
 
@@ -23,9 +23,5 @@ pub fn register_providers(registry: &mut ProviderRegistry) {
 }
 
 pub trait LyricsProvider {
-    fn fetch_lyrics(
-        &self,
-        track: &TrackInfo,
-        cfg: &PluginConfig,
-    ) -> Result<Option<(String, LyricsType)>, Error>;
+    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error>;
 }

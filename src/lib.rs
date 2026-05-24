@@ -1,12 +1,12 @@
 use crate::cache::LyricsCache;
 use crate::providers::register_providers;
 use crate::registry::ProviderRegistry;
-use crate::sanitize::{sanitize_lrc, strip_section_labels};
-use crate::types::LyricsType;
+use crate::types::Lyrics;
 use config::PluginConfig;
 use extism_pdk::warn;
 use nd_pdk::lyrics::{
-    Error as LyricsError, GetLyricsRequest, GetLyricsResponse, Lyrics, LyricsText, TrackInfo,
+    Error as LyricsError, GetLyricsRequest, GetLyricsResponse, Lyrics as LyricsPlugin, LyricsText,
+    TrackInfo,
 };
 
 mod cache;
@@ -22,7 +22,7 @@ struct Plugin;
 
 nd_pdk::register_lyrics!(Plugin);
 
-impl Lyrics for Plugin {
+impl LyricsPlugin for Plugin {
     fn get_lyrics(&self, req: GetLyricsRequest) -> Result<GetLyricsResponse, LyricsError> {
         let track = req.track;
         let cfg = PluginConfig::load()?;
@@ -35,8 +35,12 @@ impl Lyrics for Plugin {
         });
 
         if let Some(cached) = cache.as_ref().and_then(|c| c.read(&track.id, &cfg)) {
-            write_lyrics_if_enabled(&track, &cached.text, cached.kind, &cfg);
-            return Ok(make_response(cached.text));
+            write_lyrics_if_enabled(&track, &cached, &cfg);
+            return Ok(make_response(cached.text().to_string()));
+        }
+
+        if cache.as_ref().is_some_and(|c| c.is_instrumental(&track.id)) {
+            return Ok(make_response("Instrumental".to_string()));
         }
 
         if cache.as_ref().is_some_and(|c| c.is_negative(&track.id)) {
@@ -44,10 +48,10 @@ impl Lyrics for Plugin {
         }
 
         match fetch_from_providers(&track, &cfg) {
-            FetchOutcome::Found { text, kind } => {
-                write_lyrics_if_enabled(&track, &text, kind, &cfg);
-                save_to_cache(&cache, &track.id, &text, kind);
-                Ok(make_response(text))
+            FetchOutcome::Found(lyrics) => {
+                write_lyrics_if_enabled(&track, &lyrics, &cfg);
+                save_to_cache(&cache, &track.id, &lyrics);
+                Ok(make_response(lyrics.text().to_string()))
             }
             FetchOutcome::NotFound => {
                 if cfg.negative_cache {
@@ -63,10 +67,7 @@ impl Lyrics for Plugin {
 }
 
 enum FetchOutcome {
-    Found {
-        text: String,
-        kind: LyricsType,
-    },
+    Found(Lyrics),
     NotFound,
     /// At least one provider returned an error.
     ProviderError,
@@ -85,11 +86,9 @@ fn fetch_from_providers(track: &TrackInfo, cfg: &PluginConfig) -> FetchOutcome {
         };
 
         match provider.fetch_lyrics(track, cfg) {
-            Ok(Some((text, kind))) => {
-                return FetchOutcome::Found {
-                    text: sanitize(text, kind, cfg),
-                    kind,
-                };
+            Ok(Some(mut lyrics)) => {
+                lyrics.sanitize(cfg);
+                return FetchOutcome::Found(lyrics);
             }
             Ok(None) => {}
             Err(e) => {
@@ -106,29 +105,15 @@ fn fetch_from_providers(track: &TrackInfo, cfg: &PluginConfig) -> FetchOutcome {
     }
 }
 
-fn sanitize(text: String, kind: LyricsType, cfg: &PluginConfig) -> String {
-    let text = if kind == LyricsType::Synced {
-        sanitize_lrc(&text)
-    } else {
-        text
-    };
-
-    if cfg.strip_section_labels {
-        strip_section_labels(&text)
-    } else {
-        text
-    }
-}
-
-fn write_lyrics_if_enabled(track: &TrackInfo, text: &str, kind: LyricsType, cfg: &PluginConfig) {
-    if cfg.write_lyrics && writing::write(track, text, kind, cfg).is_err() {
+fn write_lyrics_if_enabled(track: &TrackInfo, lyrics: &Lyrics, cfg: &PluginConfig) {
+    if cfg.write_lyrics && writing::write(track, lyrics, cfg).is_err() {
         warn!("failed to write lyrics file to disk");
     }
 }
 
-fn save_to_cache(cache: &Option<LyricsCache>, track_id: &str, text: &str, kind: LyricsType) {
+fn save_to_cache(cache: &Option<LyricsCache>, track_id: &str, lyrics: &Lyrics) {
     if let Some(cache) = cache
-        && cache.write(track_id, text, kind).is_err()
+        && cache.write(track_id, lyrics).is_err()
     {
         warn!("failed to persist lyrics to cache");
     }

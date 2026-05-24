@@ -1,4 +1,7 @@
-use crate::{config::PluginConfig, types::LyricsType};
+use crate::{
+    config::PluginConfig,
+    types::{Lyrics, LyricsKind},
+};
 use extism_pdk::warn;
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
 use nd_pdk::{host::cache, lyrics::Error as LyricsError};
@@ -6,14 +9,16 @@ use std::io::{Read, Write};
 
 const PREFIX_SYNCED: &str = "lrc:synced:";
 const PREFIX_PLAIN: &str = "lrc:plain:";
+const PREFIX_INSTRUMENTAL: &str = "lrc:instrumental:";
 const PREFIX_NEGATIVE: &str = "lrc:miss:";
 
-const NEGATIVE_SENTINEL: &[u8] = &[1u8];
+const SENTINEL: &[u8] = &[1u8];
 
-fn cache_key(track_id: &str, kind: LyricsType) -> String {
+fn cache_key(track_id: &str, kind: LyricsKind) -> String {
     let prefix = match kind {
-        LyricsType::Synced => PREFIX_SYNCED,
-        LyricsType::Plain => PREFIX_PLAIN,
+        LyricsKind::Synced => PREFIX_SYNCED,
+        LyricsKind::Plain => PREFIX_PLAIN,
+        LyricsKind::Instrumental => PREFIX_INSTRUMENTAL,
     };
     format!("{prefix}{track_id}")
 }
@@ -27,12 +32,6 @@ pub struct LyricsCache {
     negative_ttl: i64,
 }
 
-#[derive(Debug)]
-pub struct CachedLyrics {
-    pub text: String,
-    pub kind: LyricsType,
-}
-
 impl LyricsCache {
     pub fn new(ttl_seconds: i64, negative_ttl_seconds: i64) -> Self {
         Self {
@@ -41,20 +40,30 @@ impl LyricsCache {
         }
     }
 
-    pub fn read(&self, track_id: &str, cfg: &PluginConfig) -> Option<CachedLyrics> {
+    pub fn read(&self, track_id: &str, cfg: &PluginConfig) -> Option<Lyrics> {
         cfg.resolve_order()
             .iter()
             .find_map(|&kind| self.get(track_id, kind))
     }
 
-    pub fn write(&self, track_id: &str, text: &str, kind: LyricsType) -> Result<(), LyricsError> {
-        let compressed = compress(text.as_bytes())
-            .map_err(|e| LyricsError::new(format!("compression failed: {e}")))?;
+    pub fn write(&self, track_id: &str, lyrics: &Lyrics) -> Result<(), LyricsError> {
+        let bytes = match lyrics {
+            Lyrics::Instrumental => SENTINEL.to_vec(),
+            _ => compress(lyrics.text().as_bytes())
+                .map_err(|e| LyricsError::new(format!("compression failed: {e}")))?,
+        };
 
-        cache::set_bytes(&cache_key(track_id, kind), compressed, self.ttl)
+        cache::set_bytes(&cache_key(track_id, lyrics.kind()), bytes, self.ttl)
             .map_err(|e| LyricsError::new(format!("failed to write to cache: {e}")))?;
 
         Ok(())
+    }
+
+    pub fn is_instrumental(&self, track_id: &str) -> bool {
+        cache::get_bytes(&cache_key(track_id, LyricsKind::Instrumental))
+            .ok()
+            .flatten()
+            .is_some()
     }
 
     pub fn is_negative(&self, track_id: &str) -> bool {
@@ -67,21 +76,37 @@ impl LyricsCache {
     pub fn write_negative(&self, track_id: &str) -> Result<(), LyricsError> {
         cache::set_bytes(
             &negative_cache_key(track_id),
-            NEGATIVE_SENTINEL.to_vec(),
+            SENTINEL.to_vec(),
             self.negative_ttl,
         )
         .map_err(|e| LyricsError::new(format!("failed to write negative cache entry: {e}")))
     }
 
-    fn get(&self, track_id: &str, kind: LyricsType) -> Option<CachedLyrics> {
+    fn get(&self, track_id: &str, kind: LyricsKind) -> Option<Lyrics> {
         let bytes = cache::get_bytes(&cache_key(track_id, kind)).ok()??;
 
-        match decompress(&bytes) {
-            Ok(text) => Some(CachedLyrics { text, kind }),
-            Err(e) => {
-                warn!("cache corruption detected for track {track_id}: {e}");
-                None
+        match kind {
+            LyricsKind::Instrumental => {
+                if bytes == SENTINEL {
+                    Some(Lyrics::Instrumental)
+                } else {
+                    warn!("invalid instrumental cache entry for track {track_id}");
+                    None
+                }
             }
+
+            LyricsKind::Synced | LyricsKind::Plain => match decompress(&bytes) {
+                Ok(text) => Some(match kind {
+                    LyricsKind::Synced => Lyrics::Synced(text),
+                    LyricsKind::Plain => Lyrics::Plain(text),
+                    LyricsKind::Instrumental => unreachable!(),
+                }),
+
+                Err(e) => {
+                    warn!("cache corruption detected for track {track_id}: {e}");
+                    None
+                }
+            },
         }
     }
 }
@@ -95,6 +120,7 @@ fn compress(data: &[u8]) -> Result<Vec<u8>, std::io::Error> {
 fn decompress(data: &[u8]) -> Result<String, LyricsError> {
     let mut decoder = DeflateDecoder::new(data);
     let mut bytes = Vec::new();
+
     decoder
         .read_to_end(&mut bytes)
         .map_err(|e| LyricsError::new(format!("decompression failed: {e}")))?;
@@ -108,12 +134,20 @@ mod tests {
 
     #[test]
     fn test_cache_key_synced() {
-        assert_eq!(cache_key("abc123", LyricsType::Synced), "lrc:synced:abc123");
+        assert_eq!(cache_key("abc123", LyricsKind::Synced), "lrc:synced:abc123");
     }
 
     #[test]
     fn test_cache_key_plain() {
-        assert_eq!(cache_key("abc123", LyricsType::Plain), "lrc:plain:abc123");
+        assert_eq!(cache_key("abc123", LyricsKind::Plain), "lrc:plain:abc123");
+    }
+
+    #[test]
+    fn test_cache_key_instrumental() {
+        assert_eq!(
+            cache_key("abc123", LyricsKind::Instrumental),
+            "lrc:instrumental:abc123"
+        );
     }
 
     #[test]
