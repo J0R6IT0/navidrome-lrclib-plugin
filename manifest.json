@@ -195,6 +195,23 @@
               "scope": "#/properties/lyricsPriority",
               "options": {
                 "format": "radio"
+              },
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#",
+                  "schema": {
+                    "properties": {
+                      "lyricsSynced": {
+                        "const": true
+                      },
+                      "lyricsPlain": {
+                        "const": true
+                      }
+                    },
+                    "required": ["lyricsSynced", "lyricsPlain"]
+                  }
+                }
               }
             },
             {
