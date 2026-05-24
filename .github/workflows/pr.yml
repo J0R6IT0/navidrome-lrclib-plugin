@@ -1,4 +1,4 @@
-name: "Pipeline: PR"
+name: "PR"
 
 on:
   pull_request:
