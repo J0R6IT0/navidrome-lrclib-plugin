@@ -26,6 +26,15 @@ pub fn sanitize(lrc: &str) -> String {
         "Arranger",
         "Translator",
         "Adapted by",
+        "作词",
+        "作曲",
+        "编曲",
+        "制作人",
+        "录音",
+        "混音",
+        "母带",
+        "出品人",
+        "翻译",
     ];
 
     let mut first_time_tag_processed = false;
@@ -70,8 +79,9 @@ pub fn sanitize(lrc: &str) -> String {
                 if let Some(head) = text.get(..prefix.len()) {
                     let rest = &text[prefix.len()..];
 
+                    let rest_trimmed = rest.trim_start_matches(' ');
                     if head.eq_ignore_ascii_case(prefix)
-                        && (rest.starts_with(':') || rest.starts_with('：'))
+                        && (rest_trimmed.starts_with(':') || rest_trimmed.starts_with('：'))
                     {
                         return false;
                     }
@@ -228,7 +238,46 @@ mod tests {
         }
 
         #[test]
-        fn test_mixed_metadata_credits_and_lyrics() {
+        fn test_chinese_credit_lines_filtered() {
+            let input = "[00:00.000] 作词 : Freddie Mercury\n[00:00.000] 作曲 : Freddie Mercury\n[00:06.600]He's a fairy feller";
+            assert_eq!(sanitize(input), "[00:06.600]He's a fairy feller");
+        }
+
+        #[test]
+        fn test_chinese_credit_no_space_before_colon_filtered() {
+            let input = "[00:00.000]作词:Freddie Mercury\n[00:01.000]作曲:Freddie Mercury\n[00:06.600]He's a fairy feller";
+            assert_eq!(sanitize(input), "[00:06.600]He's a fairy feller");
+        }
+
+        #[test]
+        fn test_chinese_arranger_credit_filtered() {
+            let input = "[00:02.000]编曲 : Queen\n[00:06.600]He's a fairy feller";
+            assert_eq!(sanitize(input), "[00:06.600]He's a fairy feller");
+        }
+
+        #[test]
+        fn test_netease_credit_block_filtered() {
+            // NetEase preamble example
+            let input = concat!(
+                "[00:00.000] 作词 : Freddie Mercury\n",
+                "[00:00.000] 作曲 : Freddie Mercury\n",
+                "[00:01.000]作曲 : Freddie Mercury\n",
+                "[00:02.000]编曲 : Queen\n",
+                "[00:06.600]He's a fairy feller\n",
+                "[00:20.860]Ah ah the fairy folk have gathered\n",
+                "[00:22.590]Round the new moon's shine",
+            );
+            assert_eq!(
+                sanitize(input),
+                "[00:06.600]He's a fairy feller\n[00:20.860]Ah ah the fairy folk have gathered\n[00:22.590]Round the new moon's shine"
+            );
+        }
+
+        #[test]
+        fn test_space_before_colon_english_credit_filtered() {
+            let input = "Written by : Someone\n[00:05.00] Hello";
+            assert_eq!(sanitize(input), "[00:05.00] Hello");
+
             let input = concat!(
                 "[ar:Artist]\n",
                 "[al:Album]\n",
