@@ -30,7 +30,7 @@ struct SongSearchData {
 #[derive(Debug, Deserialize)]
 struct SongInfo {
     hash: String,
-    duration: u64,
+    duration: Option<u64>,
     trans_param: Option<TransParam>,
 }
 
@@ -134,20 +134,21 @@ fn find_song(keyword: &str, target_duration: f32) -> Result<Option<SongInfo>, Er
     let tolerance = 2u64;
     let target_secs = target_duration.round() as u64;
 
-    Ok(parsed
-        .data
-        .info
-        .into_iter()
-        .find(|s| s.duration.abs_diff(target_secs) <= tolerance))
+    Ok(parsed.data.info.into_iter().find(|s| {
+        s.duration
+            .map(|d| d.abs_diff(target_secs) <= tolerance)
+            .unwrap_or(false)
+    }))
 }
 
-fn find_candidate(hash: &str, duration: u64) -> Result<Option<Candidate>, Error> {
+fn find_candidate(hash: &str, duration: Option<u64>) -> Result<Option<Candidate>, Error> {
+    let duration_str = duration.unwrap_or(0).to_string();
     let query = serde_urlencoded::to_string([
         ("ver", "1"),
         ("man", "yes"),
         ("client", "mobi"),
         ("keyword", ""),
-        ("duration", &duration.to_string()),
+        ("duration", &duration_str),
         ("hash", hash),
         ("album_audio_id", ""),
     ])

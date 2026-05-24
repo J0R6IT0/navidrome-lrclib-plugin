@@ -30,7 +30,7 @@ struct SearchResult {
 struct Song {
     id: u64,
     #[serde(rename = "duration")]
-    duration_ms: u64,
+    duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,11 +96,11 @@ fn search_song(query: &str, target_ms: u64) -> Result<Option<Song>, Error> {
     let parsed: SearchResponse = serde_json::from_slice(&response.body)
         .map_err(|e| Error::new(format!("netease: failed to parse search response: {e}")))?;
 
-    Ok(parsed
-        .result
-        .songs
-        .into_iter()
-        .find(|s| s.duration_ms.abs_diff(target_ms) <= DURATION_TOLERANCE_MS))
+    Ok(parsed.result.songs.into_iter().find(|s| {
+        s.duration_ms
+            .map(|d| d.abs_diff(target_ms) <= DURATION_TOLERANCE_MS)
+            .unwrap_or(false)
+    }))
 }
 
 fn fetch_lrc(song_id: u64) -> Result<Option<Lyrics>, Error> {
