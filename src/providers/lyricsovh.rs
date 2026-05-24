@@ -1,7 +1,7 @@
 use crate::{
     config::PluginConfig,
     providers::{LyricsProvider, USER_AGENT},
-    types::LyricsType,
+    types::Lyrics,
 };
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
@@ -31,11 +31,7 @@ impl LyricsOvh {
 }
 
 impl LyricsProvider for LyricsOvh {
-    fn fetch_lyrics(
-        &self,
-        track: &TrackInfo,
-        cfg: &PluginConfig,
-    ) -> Result<Option<(String, LyricsType)>, Error> {
+    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
         if !cfg.wants_plain() {
             return Ok(None);
         }
@@ -64,7 +60,7 @@ impl LyricsProvider for LyricsOvh {
         let body: ApiResponse = serde_json::from_slice(&response.body)
             .map_err(|e| Error::new(format!("failed to parse lyrics.ovh response: {e}")))?;
 
-        Ok(Some((body.lyrics, LyricsType::Plain)))
+        Ok(Some(Lyrics::Plain(body.lyrics)))
     }
 }
 

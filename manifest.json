@@ -74,12 +74,26 @@
           "default": true
         },
 
-        "cacheTtl": {
+        "cacheTtlHours": {
           "type": "integer",
-          "title": "Cache TTL (seconds)",
-          "minimum": 60,
-          "default": 86400,
-          "description": "How long cached lyrics remain valid. Default is 24 hours."
+          "title": "Cache TTL (hours)",
+          "minimum": 1,
+          "default": 168,
+          "description": "How long cached lyrics remain valid. Default is 7 days."
+        },
+
+        "negativeCache": {
+          "type": "boolean",
+          "title": "Cache negative results (i.e. no lyrics found)",
+          "default": true
+        },
+
+        "negativeCacheTtlHours": {
+          "type": "integer",
+          "title": "Negative cache TTL (hours)",
+          "minimum": 1,
+          "default": 24,
+          "description": "How long negative cache entries remain valid. Default is 24 hours."
         },
 
         "writeLyrics": {
@@ -100,6 +114,13 @@
           "title": "Synced lyrics extension",
           "default": "lrc",
           "description": "File extension for synced lyrics files."
+        },
+
+        "instrumentalExtension": {
+          "type": "string",
+          "title": "Instrumental lyrics extension",
+          "default": "txt",
+          "description": "File extension for instrumental lyrics files."
         },
 
         "overwriteLyrics": {
@@ -198,13 +219,47 @@
             },
             {
               "type": "Control",
-              "scope": "#/properties/cacheTtl",
+              "scope": "#/properties/cacheTtlHours",
               "rule": {
                 "effect": "SHOW",
                 "condition": {
                   "scope": "#/properties/enableCache",
                   "schema": {
                     "const": true
+                  }
+                }
+              }
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/negativeCache",
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#/properties/enableCache",
+                  "schema": {
+                    "const": true
+                  }
+                }
+              }
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/negativeCacheTtlHours",
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#",
+                  "schema": {
+                    "properties": {
+                      "enableCache": {
+                        "const": true
+                      },
+                      "negativeCache": {
+                        "const": true
+                      }
+                    },
+                    "required": ["enableCache", "negativeCache"]
                   }
                 }
               }
@@ -234,6 +289,10 @@
                 {
                   "type": "Control",
                   "scope": "#/properties/syncedExtension"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/instrumentalExtension"
                 }
               ],
               "rule": {
@@ -278,9 +337,17 @@
               "rule": {
                 "effect": "SHOW",
                 "condition": {
-                  "scope": "#/properties/writeToSpecificFolder",
+                  "scope": "#",
                   "schema": {
-                    "const": true
+                    "properties": {
+                      "writeLyrics": {
+                        "const": true
+                      },
+                      "writeToSpecificFolder": {
+                        "const": true
+                      }
+                    },
+                    "required": ["writeLyrics", "writeToSpecificFolder"]
                   }
                 }
               }
@@ -291,9 +358,17 @@
               "rule": {
                 "effect": "SHOW",
                 "condition": {
-                  "scope": "#/properties/writeToSpecificFolder",
+                  "scope": "#",
                   "schema": {
-                    "const": true
+                    "properties": {
+                      "writeLyrics": {
+                        "const": true
+                      },
+                      "writeToSpecificFolder": {
+                        "const": true
+                      }
+                    },
+                    "required": ["writeLyrics", "writeToSpecificFolder"]
                   }
                 }
               }

@@ -1,20 +1,18 @@
-use crate::{config::PluginConfig, types::LyricsType};
+use crate::{
+    config::PluginConfig,
+    types::{Lyrics, LyricsKind},
+};
 use nd_pdk::{
     host::library,
     lyrics::{Error as LyricsError, TrackInfo},
 };
 use std::{fs, path::PathBuf};
 
-pub fn write(
-    track: &TrackInfo,
-    text: &str,
-    kind: LyricsType,
-    cfg: &PluginConfig,
-) -> Result<(), LyricsError> {
+pub fn write(track: &TrackInfo, lyrics: &Lyrics, cfg: &PluginConfig) -> Result<(), LyricsError> {
     let path = if cfg.write_to_specific_folder {
-        resolve_custom_path(track, kind, cfg)?
+        resolve_custom_path(track, lyrics.kind(), cfg)?
     } else {
-        resolve_sidecar_path(track, kind, cfg)?
+        resolve_sidecar_path(track, lyrics.kind(), cfg)?
     };
 
     if path.exists() && !cfg.overwrite_lyrics {
@@ -26,7 +24,7 @@ pub fn write(
             .map_err(|e| LyricsError::new(format!("failed to create lyrics directory: {e}")))?;
     }
 
-    fs::write(&path, text)
+    fs::write(&path, lyrics.text())
         .map_err(|e| LyricsError::new(format!("failed to write lyrics file: {e}")))?;
 
     Ok(())
@@ -34,7 +32,7 @@ pub fn write(
 
 fn resolve_custom_path(
     track: &TrackInfo,
-    kind: LyricsType,
+    kind: LyricsKind,
     cfg: &PluginConfig,
 ) -> Result<PathBuf, LyricsError> {
     let library_id = cfg.write_to_specific_folder_library_id.ok_or_else(|| {
@@ -46,8 +44,9 @@ fn resolve_custom_path(
         .ok_or_else(|| LyricsError::new(format!("library with ID {library_id} not found")))?;
 
     let ext = match kind {
-        LyricsType::Synced => &cfg.synced_extension,
-        LyricsType::Plain => &cfg.plain_extension,
+        LyricsKind::Synced => &cfg.synced_extension,
+        LyricsKind::Plain => &cfg.plain_extension,
+        LyricsKind::Instrumental => &cfg.instrumental_extension,
     };
 
     let relative_path = process_template(&cfg.write_to_specific_folder_template, track, kind, ext);
@@ -57,7 +56,7 @@ fn resolve_custom_path(
 
 fn resolve_sidecar_path(
     track: &TrackInfo,
-    kind: LyricsType,
+    kind: LyricsKind,
     cfg: &PluginConfig,
 ) -> Result<PathBuf, LyricsError> {
     if track.path.is_empty() {
@@ -68,8 +67,9 @@ fn resolve_sidecar_path(
         .ok_or_else(|| LyricsError::new("could not resolve track path to a valid local file"))?;
 
     let ext = match kind {
-        LyricsType::Synced => &cfg.synced_extension,
-        LyricsType::Plain => &cfg.plain_extension,
+        LyricsKind::Synced => &cfg.synced_extension,
+        LyricsKind::Plain => &cfg.plain_extension,
+        LyricsKind::Instrumental => &cfg.instrumental_extension,
     };
 
     path.set_extension(ext);
@@ -90,10 +90,11 @@ fn resolve_track_path(track: &TrackInfo) -> Result<Option<PathBuf>, LyricsError>
     Ok(None)
 }
 
-fn process_template(template: &str, track: &TrackInfo, kind: LyricsType, ext: &str) -> PathBuf {
+fn process_template(template: &str, track: &TrackInfo, kind: LyricsKind, ext: &str) -> PathBuf {
     let type_str = match kind {
-        LyricsType::Synced => "synced",
-        LyricsType::Plain => "plain",
+        LyricsKind::Synced => "synced",
+        LyricsKind::Plain => "plain",
+        LyricsKind::Instrumental => "instrumental",
     };
 
     let mut path = PathBuf::new();
@@ -322,7 +323,7 @@ mod tests {
         let track = default_track();
 
         let template = "lyrics/{type}/{track:artist}/{track:title}";
-        let path = process_template(template, &track, LyricsType::Synced, "lrc");
+        let path = process_template(template, &track, LyricsKind::Synced, "lrc");
         assert_eq!(
             path,
             PathBuf::from("lyrics/synced/Test Artist/Test Song.lrc")
@@ -334,11 +335,11 @@ mod tests {
         let track = default_track();
 
         let template_backup = "lyrics/{track:title}.backup";
-        let path = process_template(template_backup, &track, LyricsType::Synced, "lrc");
+        let path = process_template(template_backup, &track, LyricsKind::Synced, "lrc");
         assert_eq!(path, PathBuf::from("lyrics/Test Song.backup.lrc"));
 
         let template_multi = "lyrics/{track:title}.backup.txt";
-        let path = process_template(template_multi, &track, LyricsType::Synced, "lrc");
+        let path = process_template(template_multi, &track, LyricsKind::Synced, "lrc");
         assert_eq!(path, PathBuf::from("lyrics/Test Song.backup.txt.lrc"));
     }
 
@@ -347,7 +348,7 @@ mod tests {
         let track = default_track();
 
         let template = "lyrics/{track:title}.txt";
-        let path = process_template(template, &track, LyricsType::Synced, "lrc");
+        let path = process_template(template, &track, LyricsKind::Synced, "lrc");
         assert_eq!(path, PathBuf::from("lyrics/Test Song.txt.lrc"));
     }
 
@@ -356,7 +357,7 @@ mod tests {
         let track = default_track();
 
         let template = "lyrics/{track:title}.lrc";
-        let path = process_template(template, &track, LyricsType::Synced, "lrc");
+        let path = process_template(template, &track, LyricsKind::Synced, "lrc");
         assert_eq!(path, PathBuf::from("lyrics/Test Song.lrc"));
     }
 
@@ -365,7 +366,7 @@ mod tests {
         let track = default_track();
 
         let template = "lyrics///{type}//{track:artist}/";
-        let path = process_template(template, &track, LyricsType::Synced, "lrc");
+        let path = process_template(template, &track, LyricsKind::Synced, "lrc");
         assert_eq!(path, PathBuf::from("lyrics/synced/Test Artist/unknown.lrc"));
     }
 
@@ -374,7 +375,7 @@ mod tests {
         let track = default_track();
 
         let template = "///";
-        let path = process_template(template, &track, LyricsType::Synced, "lrc");
+        let path = process_template(template, &track, LyricsKind::Synced, "lrc");
         assert_eq!(path, PathBuf::from("unknown.lrc"));
     }
 
@@ -387,7 +388,7 @@ mod tests {
         };
 
         let template = "{track:artist}/{track:title}";
-        let path = process_template(template, &track, LyricsType::Plain, "txt");
+        let path = process_template(template, &track, LyricsKind::Plain, "txt");
         assert_eq!(path, PathBuf::from("unknown/unknown.txt"));
     }
 
@@ -400,7 +401,7 @@ mod tests {
         };
 
         let template = "{track:artist}/{track:title}";
-        let path = process_template(template, &track, LyricsType::Plain, "txt");
+        let path = process_template(template, &track, LyricsKind::Plain, "txt");
         assert_eq!(path, PathBuf::from("unknown/unknown.txt"));
     }
 
@@ -413,7 +414,7 @@ mod tests {
         };
 
         let template = "{track:artist}/{track:album}/{track:title}";
-        let path = process_template(template, &track, LyricsType::Synced, "lrc");
+        let path = process_template(template, &track, LyricsKind::Synced, "lrc");
         assert_eq!(path, PathBuf::from("U2/Achtung.Baby/Test Song.lrc"));
     }
 
@@ -426,7 +427,7 @@ mod tests {
         };
 
         let template = "{track:artist}/{track:title}";
-        let path = process_template(template, &track, LyricsType::Plain, "txt");
+        let path = process_template(template, &track, LyricsKind::Plain, "txt");
         assert_eq!(path, PathBuf::from("The Artist/Hidden Song.txt"));
     }
 
@@ -438,7 +439,7 @@ mod tests {
         };
 
         let template = "lyrics/{track:title}";
-        let path = process_template(template, &track, LyricsType::Plain, "txt");
+        let path = process_template(template, &track, LyricsKind::Plain, "txt");
 
         assert_eq!(path, PathBuf::from("lyrics/_.._.._etc_passwd.txt"));
     }
@@ -448,7 +449,7 @@ mod tests {
         let track = default_track();
 
         let template = "../../{track:title}";
-        let path = process_template(template, &track, LyricsType::Plain, "txt");
+        let path = process_template(template, &track, LyricsKind::Plain, "txt");
 
         assert_eq!(path, PathBuf::from("unknown/unknown/Test Song.txt"));
     }
@@ -462,7 +463,7 @@ mod tests {
         };
 
         let template = "lyrics/{track:artist}/{track:title}";
-        let path = process_template(template, &track, LyricsType::Synced, "lrc");
+        let path = process_template(template, &track, LyricsKind::Synced, "lrc");
 
         assert_eq!(path, PathBuf::from("lyrics/Björk/大丈夫 🎵.lrc"));
     }
@@ -472,7 +473,7 @@ mod tests {
         let track = default_track();
 
         let template = "lyrics/{track:titel}";
-        let path = process_template(template, &track, LyricsType::Plain, "txt");
+        let path = process_template(template, &track, LyricsKind::Plain, "txt");
 
         assert_eq!(path, PathBuf::from("lyrics/{track_titel}.txt"));
     }
@@ -482,7 +483,7 @@ mod tests {
         let track = default_track();
 
         let template = "lyrics/{ track:title }";
-        let path = process_template(template, &track, LyricsType::Plain, "txt");
+        let path = process_template(template, &track, LyricsKind::Plain, "txt");
 
         assert_eq!(path, PathBuf::from("lyrics/{ track_title }.txt"));
     }
@@ -492,7 +493,7 @@ mod tests {
         let track = default_track();
 
         let template = r"lyrics\{type}/{track:artist}\{track:title}";
-        let path = process_template(template, &track, LyricsType::Synced, "lrc");
+        let path = process_template(template, &track, LyricsKind::Synced, "lrc");
 
         assert_eq!(
             path,
@@ -510,7 +511,7 @@ mod tests {
 
         let template_unpadded =
             "lyrics/Disc {track:disc_number}/{track:track_number} - {track:title}";
-        let path_unpadded = process_template(template_unpadded, &track, LyricsType::Plain, "txt");
+        let path_unpadded = process_template(template_unpadded, &track, LyricsKind::Plain, "txt");
         assert_eq!(
             path_unpadded,
             PathBuf::from("lyrics/Disc 1/5 - Test Song.txt")
@@ -518,7 +519,7 @@ mod tests {
 
         let template_padded =
             "lyrics/Disc {track:disc_number:2}/{track:track_number:2} - {track:title}";
-        let path_padded = process_template(template_padded, &track, LyricsType::Plain, "txt");
+        let path_padded = process_template(template_padded, &track, LyricsKind::Plain, "txt");
         assert_eq!(
             path_padded,
             PathBuf::from("lyrics/Disc 01/05 - Test Song.txt")

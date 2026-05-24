@@ -1,7 +1,7 @@
 use crate::{
     config::PluginConfig,
     providers::{FIREFOX_USER_AGENT, LyricsProvider},
-    types::LyricsType,
+    types::Lyrics,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use nd_pdk::{
@@ -59,11 +59,7 @@ impl Kugou {
 }
 
 impl LyricsProvider for Kugou {
-    fn fetch_lyrics(
-        &self,
-        track: &TrackInfo,
-        cfg: &PluginConfig,
-    ) -> Result<Option<(String, LyricsType)>, Error> {
+    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
         if !cfg.wants_synced() {
             return Ok(None);
         }
@@ -89,7 +85,7 @@ impl LyricsProvider for Kugou {
 
         let lrc = download_lrc(&candidate.id, &candidate.accesskey)?;
 
-        Ok(Some((lrc, LyricsType::Synced)))
+        Ok(Some(Lyrics::Synced(lrc)))
     }
 }
 
@@ -125,13 +121,13 @@ fn find_song(keyword: &str, target_duration: f32) -> Result<Option<SongInfo>, Er
         .find(|s| s.duration.abs_diff(target_secs) <= tolerance))
 }
 
-fn find_candidate(hash: &str, duration_ms: u64) -> Result<Option<Candidate>, Error> {
+fn find_candidate(hash: &str, duration: u64) -> Result<Option<Candidate>, Error> {
     let query = serde_urlencoded::to_string([
         ("ver", "1"),
         ("man", "yes"),
         ("client", "mobi"),
         ("keyword", ""),
-        ("duration", &duration_ms.to_string()),
+        ("duration", &duration.to_string()),
         ("hash", hash),
         ("album_audio_id", ""),
     ])
