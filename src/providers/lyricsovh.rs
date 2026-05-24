@@ -60,6 +60,10 @@ impl LyricsProvider for LyricsOvh {
         let body: ApiResponse = serde_json::from_slice(&response.body)
             .map_err(|e| Error::new(format!("failed to parse lyrics.ovh response: {e}")))?;
 
+        if body.lyrics.trim().is_empty() {
+            return Ok(None);
+        }
+
         Ok(Some(Lyrics::Plain(body.lyrics)))
     }
 }
@@ -112,5 +116,11 @@ mod tests {
     fn test_build_search_url_custom_base() {
         let url = build_search_url("http://localhost:8080", "Artist", "Title");
         assert_eq!(url, "http://localhost:8080/v1/Artist/Title");
+    }
+
+    #[test]
+    fn test_build_search_url_empty_artist() {
+        let url = build_search_url(DEFAULT_BASE_URL, "", "Title");
+        assert_eq!(url, "https://api.lyrics.ovh/v1//Title");
     }
 }
