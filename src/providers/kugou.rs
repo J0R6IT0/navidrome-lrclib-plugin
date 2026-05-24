@@ -121,13 +121,13 @@ fn find_song(keyword: &str, target_duration: f32) -> Result<Option<SongInfo>, Er
         .find(|s| s.duration.abs_diff(target_secs) <= tolerance))
 }
 
-fn find_candidate(hash: &str, duration_ms: u64) -> Result<Option<Candidate>, Error> {
+fn find_candidate(hash: &str, duration: u64) -> Result<Option<Candidate>, Error> {
     let query = serde_urlencoded::to_string([
         ("ver", "1"),
         ("man", "yes"),
         ("client", "mobi"),
         ("keyword", ""),
-        ("duration", &duration_ms.to_string()),
+        ("duration", &duration.to_string()),
         ("hash", hash),
         ("album_audio_id", ""),
     ])

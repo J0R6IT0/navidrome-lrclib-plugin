@@ -160,7 +160,7 @@ fn pick_text(record: LrclibRecord, cfg: &PluginConfig) -> Option<Lyrics> {
         let lyrics = match kind {
             LyricsKind::Synced => synced.as_ref().map(|t| Lyrics::Synced(t.clone())),
             LyricsKind::Plain => plain.as_ref().map(|t| Lyrics::Plain(t.clone())),
-            LyricsKind::Instrumental => unreachable!(),
+            LyricsKind::Instrumental => None,
         };
 
         if let Some(lyrics) = lyrics {

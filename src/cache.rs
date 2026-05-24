@@ -27,6 +27,12 @@ fn negative_cache_key(track_id: &str) -> String {
     format!("{PREFIX_NEGATIVE}{track_id}")
 }
 
+pub enum CacheLookup {
+    Found(Lyrics),
+    Negative,
+    Miss,
+}
+
 pub struct LyricsCache {
     ttl: i64,
     negative_ttl: i64,
@@ -40,7 +46,23 @@ impl LyricsCache {
         }
     }
 
-    pub fn read(&self, track_id: &str, cfg: &PluginConfig) -> Option<Lyrics> {
+    pub fn lookup(&self, track_id: &str, cfg: &PluginConfig) -> CacheLookup {
+        if let Some(lyrics) = self.read(track_id, cfg) {
+            return CacheLookup::Found(lyrics);
+        }
+
+        if self.is_instrumental(track_id) {
+            return CacheLookup::Found(Lyrics::Instrumental);
+        }
+
+        if self.is_negative(track_id) {
+            return CacheLookup::Negative;
+        }
+
+        CacheLookup::Miss
+    }
+
+    fn read(&self, track_id: &str, cfg: &PluginConfig) -> Option<Lyrics> {
         cfg.resolve_order()
             .iter()
             .find_map(|&kind| self.get(track_id, kind))
@@ -59,14 +81,14 @@ impl LyricsCache {
         Ok(())
     }
 
-    pub fn is_instrumental(&self, track_id: &str) -> bool {
+    fn is_instrumental(&self, track_id: &str) -> bool {
         cache::get_bytes(&cache_key(track_id, LyricsKind::Instrumental))
             .ok()
             .flatten()
             .is_some()
     }
 
-    pub fn is_negative(&self, track_id: &str) -> bool {
+    fn is_negative(&self, track_id: &str) -> bool {
         cache::get_bytes(&negative_cache_key(track_id))
             .ok()
             .flatten()

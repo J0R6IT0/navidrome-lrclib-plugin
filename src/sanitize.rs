@@ -76,6 +76,7 @@ pub fn sanitize_lrc(lrc: &str) -> String {
                 }
             }
 
+            let text = text.trim_start();
             for prefix in CREDIT_PREFIXES {
                 if let Some(head) = text.get(..prefix.len()) {
                     let rest = &text[prefix.len()..];
@@ -119,7 +120,122 @@ pub fn strip_section_labels(lyrics: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::sanitize_lrc;
     use super::strip_section_labels;
+
+    mod sanitize_lrc_tests {
+        use super::sanitize_lrc;
+
+        #[test]
+        fn test_metadata_tags_stripped() {
+            let input = "[ar:Artist Name]\n[al:Album]\n[ti:Song Title]\n[00:10.00] Hello";
+            assert_eq!(sanitize_lrc(input), "[00:10.00] Hello");
+        }
+
+        #[test]
+        fn test_offset_tag_kept() {
+            let input = "[offset:-500]\n[ar:Artist]\n[00:10.00] Hello";
+            assert_eq!(sanitize_lrc(input), "[offset:-500]\n[00:10.00] Hello");
+        }
+
+        #[test]
+        fn test_standalone_bracket_without_colon_stripped() {
+            let input = "[SomethingWithoutColon]\n[00:10.00] Hello";
+            assert_eq!(sanitize_lrc(input), "[00:10.00] Hello");
+        }
+
+        #[test]
+        fn test_regular_lyric_lines_kept() {
+            let input = "[00:10.00] Hello world\n[00:15.00] Foo bar";
+            assert_eq!(
+                sanitize_lrc(input),
+                "[00:10.00] Hello world\n[00:15.00] Foo bar"
+            );
+        }
+
+        #[test]
+        fn test_empty_input() {
+            assert_eq!(sanitize_lrc(""), "");
+        }
+
+        #[test]
+        fn test_first_time_tag_title_pattern_at_under_5s_is_filtered() {
+            let input = "[00:01.00] Artist - Title\n[00:05.00] First verse";
+            assert_eq!(sanitize_lrc(input), "[00:05.00] First verse");
+        }
+
+        #[test]
+        fn test_first_time_tag_no_dash_is_kept() {
+            let input = "[00:01.00] First verse";
+            assert_eq!(sanitize_lrc(input), "[00:01.00] First verse");
+        }
+
+        #[test]
+        fn test_first_time_tag_title_pattern_at_exactly_5s_is_kept() {
+            let input = "[00:05.00] Artist - Title\n[00:10.00] Hello";
+            assert_eq!(
+                sanitize_lrc(input),
+                "[00:05.00] Artist - Title\n[00:10.00] Hello"
+            );
+        }
+
+        #[test]
+        fn test_second_time_tag_title_pattern_is_kept() {
+            let input = "[00:01.00] First verse\n[00:03.00] Artist - Title";
+            assert_eq!(
+                sanitize_lrc(input),
+                "[00:01.00] First verse\n[00:03.00] Artist - Title"
+            );
+        }
+
+        #[test]
+        fn test_non_tagged_credit_line_filtered() {
+            let input = "Lyrics by: Someone\n[00:05.00] Hello";
+            assert_eq!(sanitize_lrc(input), "[00:05.00] Hello");
+        }
+
+        #[test]
+        fn test_time_tagged_credit_line_filtered() {
+            let input = "[00:01.00] Lyrics by: Someone\n[00:05.00] Hello";
+            assert_eq!(sanitize_lrc(input), "[00:05.00] Hello");
+        }
+
+        #[test]
+        fn test_credit_with_fullwidth_colon_filtered() {
+            let input = "Written by\u{FF1A} Someone\n[00:05.00] Hello";
+            assert_eq!(sanitize_lrc(input), "[00:05.00] Hello");
+        }
+
+        #[test]
+        fn test_multiple_credits_filtered() {
+            let input =
+                "[00:01.00] Music by: Composer\n[00:02.00] Arranged by: Arranger\n[00:10.00] Verse";
+            assert_eq!(sanitize_lrc(input), "[00:10.00] Verse");
+        }
+
+        #[test]
+        fn test_credit_prefix_case_insensitive() {
+            let input = "LYRICS BY: Someone\n[00:05.00] Hello";
+            assert_eq!(sanitize_lrc(input), "[00:05.00] Hello");
+        }
+
+        #[test]
+        fn test_mixed_metadata_credits_and_lyrics() {
+            let input = concat!(
+                "[ar:Artist]\n",
+                "[al:Album]\n",
+                "[offset:500]\n",
+                "[00:00.50] Artist - Title\n",
+                "[00:10.00] Lyrics by: Someone\n",
+                "[00:15.00] Hello\n",
+                "[00:20.00] World"
+            );
+            assert_eq!(
+                sanitize_lrc(input),
+                "[offset:500]\n[00:15.00] Hello\n[00:20.00] World"
+            );
+        }
+    }
 
     mod strip_section_labels_tests {
         use super::strip_section_labels;

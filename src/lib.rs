@@ -1,4 +1,4 @@
-use crate::cache::LyricsCache;
+use crate::cache::{CacheLookup, LyricsCache};
 use crate::providers::register_providers;
 use crate::registry::ProviderRegistry;
 use crate::types::Lyrics;
@@ -34,17 +34,17 @@ impl LyricsPlugin for Plugin {
             )
         });
 
-        if let Some(cached) = cache.as_ref().and_then(|c| c.read(&track.id, &cfg)) {
-            write_lyrics_if_enabled(&track, &cached, &cfg);
-            return Ok(make_response(cached.text().to_string()));
-        }
-
-        if cache.as_ref().is_some_and(|c| c.is_instrumental(&track.id)) {
-            return Ok(make_response("Instrumental".to_string()));
-        }
-
-        if cache.as_ref().is_some_and(|c| c.is_negative(&track.id)) {
-            return Err(LyricsError::new("no lyrics found (cached)"));
+        if let Some(cache) = &cache {
+            match cache.lookup(&track.id, &cfg) {
+                CacheLookup::Found(lyrics) => {
+                    write_lyrics_if_enabled(&track, &lyrics, &cfg);
+                    return Ok(make_response(lyrics.text().to_string()));
+                }
+                CacheLookup::Negative => {
+                    return Err(LyricsError::new("no lyrics found (cached)"));
+                }
+                CacheLookup::Miss => {}
+            }
         }
 
         match fetch_from_providers(&track, &cfg) {
