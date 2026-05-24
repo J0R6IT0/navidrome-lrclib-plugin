@@ -38,7 +38,7 @@ impl LyricsPlugin for Plugin {
             match cache.lookup(&track.id, &cfg) {
                 CacheLookup::Found(lyrics) => {
                     write_lyrics_if_enabled(&track, &lyrics, &cfg);
-                    return Ok(make_response(lyrics.text().to_string()));
+                    return Ok(make_response(lyrics.text(&cfg).to_string()));
                 }
                 CacheLookup::Negative => {
                     return Err(LyricsError::new("no lyrics found (cached)"));
@@ -50,8 +50,8 @@ impl LyricsPlugin for Plugin {
         match fetch_from_providers(&track, &cfg) {
             FetchOutcome::Found(lyrics) => {
                 write_lyrics_if_enabled(&track, &lyrics, &cfg);
-                save_to_cache(&cache, &track.id, &lyrics);
-                Ok(make_response(lyrics.text().to_string()))
+                save_to_cache(&cache, &track.id, &lyrics, &cfg);
+                Ok(make_response(lyrics.text(&cfg).to_string()))
             }
             FetchOutcome::NotFound => {
                 if cfg.negative_cache {
@@ -111,9 +111,9 @@ fn write_lyrics_if_enabled(track: &TrackInfo, lyrics: &Lyrics, cfg: &PluginConfi
     }
 }
 
-fn save_to_cache(cache: &Option<LyricsCache>, track_id: &str, lyrics: &Lyrics) {
+fn save_to_cache(cache: &Option<LyricsCache>, track_id: &str, lyrics: &Lyrics, cfg: &PluginConfig) {
     if let Some(cache) = cache
-        && cache.write(track_id, lyrics).is_err()
+        && cache.write(track_id, lyrics, cfg).is_err()
     {
         warn!("failed to persist lyrics to cache");
     }

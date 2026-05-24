@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::{
     config::PluginConfig,
     sanitize::{sanitize_lrc, strip_section_labels},
@@ -19,11 +21,11 @@ impl Lyrics {
         }
     }
 
-    pub fn text(&self) -> &str {
+    pub fn text<'a>(&'a self, cfg: &'a PluginConfig) -> Cow<'a, str> {
         match self {
-            Lyrics::Synced(s) => s,
-            Lyrics::Plain(s) => s,
-            Lyrics::Instrumental => "Instrumental",
+            Lyrics::Synced(s) => Cow::Borrowed(s),
+            Lyrics::Plain(s) => Cow::Borrowed(s),
+            Lyrics::Instrumental => Cow::Borrowed(&cfg.instrumental_text),
         }
     }
 

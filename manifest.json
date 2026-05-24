@@ -54,11 +54,17 @@
           ]
         },
 
+        "instrumentalText": {
+          "type": "string",
+          "title": "Instrumental lyrics text",
+          "default": "Instrumental",
+          "description": "The text to use for instrumental lyrics."
+        },
+
         "stripSectionLabels": {
           "type": "boolean",
           "title": "Strip section labels ([Verse], [Chorus], etc.)",
-          "default": false,
-          "description": ""
+          "default": false
         },
 
         "providers": {
@@ -190,6 +196,10 @@
               "options": {
                 "format": "radio"
               }
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/instrumentalText"
             },
             {
               "type": "Control",
