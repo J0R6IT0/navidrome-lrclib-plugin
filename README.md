@@ -43,6 +43,7 @@ lrclib(http://my_custom_lrclib.net),lrclib,lyrics.ovh
 | lrclib     | plain + synced | (Base URL)          |
 | lyrics.ovh | plain          | (Base URL)          |
 | kugou      | synced         |                     |
+| netease    | synced         |                     |
 
 ## Path variables
 

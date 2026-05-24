@@ -109,7 +109,6 @@ impl PluginConfig {
         &self.lyrics_type_priority
     }
 
-    #[allow(dead_code)]
     pub fn wants_synced(&self) -> bool {
         self.lyrics_type_priority.contains(&LyricsKind::Synced)
     }
