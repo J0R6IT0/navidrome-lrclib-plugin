@@ -31,6 +31,13 @@ struct SongSearchData {
 struct SongInfo {
     hash: String,
     duration: u64,
+    trans_param: Option<TransParam>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TransParam {
+    #[serde(default)]
+    language: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -78,6 +85,14 @@ impl LyricsProvider for Kugou {
             Some(s) => s,
             None => return Ok(None),
         };
+
+        if song
+            .trans_param
+            .as_ref()
+            .is_some_and(|p| p.language == "纯音乐")
+        {
+            return Ok(Some(Lyrics::Instrumental));
+        }
 
         let candidate = match find_candidate(&song.hash, song.duration)? {
             Some(c) => c,

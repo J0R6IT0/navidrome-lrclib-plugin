@@ -1,6 +1,5 @@
 use crate::{
     config::PluginConfig,
-    format::lrc,
     providers::{FIREFOX_USER_AGENT, LyricsProvider},
     types::Lyrics,
 };
@@ -35,8 +34,11 @@ struct Song {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct LyricsResponse {
     lrc: Option<LrcContent>,
+    #[serde(default)]
+    pure_music: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,16 +75,7 @@ impl LyricsProvider for NetEase {
             None => return Ok(None),
         };
 
-        let lrc = match fetch_lrc(song.id)? {
-            Some(s) => s,
-            None => return Ok(None),
-        };
-
-        if lrc::is_instrumental(&lrc) {
-            Ok(Some(Lyrics::Instrumental))
-        } else {
-            Ok(Some(Lyrics::Synced(lrc)))
-        }
+        fetch_lrc(song.id)
     }
 }
 
@@ -110,7 +103,7 @@ fn search_song(query: &str, target_ms: u64) -> Result<Option<Song>, Error> {
         .find(|s| s.duration_ms.abs_diff(target_ms) <= DURATION_TOLERANCE_MS))
 }
 
-fn fetch_lrc(song_id: u64) -> Result<Option<String>, Error> {
+fn fetch_lrc(song_id: u64) -> Result<Option<Lyrics>, Error> {
     let qs = serde_urlencoded::to_string([
         ("id", song_id.to_string()),
         ("kv", "-1".to_string()),
@@ -131,10 +124,15 @@ fn fetch_lrc(song_id: u64) -> Result<Option<String>, Error> {
     let parsed: LyricsResponse = serde_json::from_slice(&response.body)
         .map_err(|e| Error::new(format!("netease: failed to parse lyrics response: {e}")))?;
 
-    Ok(parsed
-        .lrc
-        .and_then(|l| l.lyric)
-        .filter(|s| !s.trim().is_empty()))
+    Ok(if parsed.pure_music {
+        Some(Lyrics::Instrumental)
+    } else {
+        parsed
+            .lrc
+            .and_then(|l| l.lyric)
+            .filter(|s| !s.trim().is_empty())
+            .map(Lyrics::Synced)
+    })
 }
 
 fn send_request(url: &str) -> Result<HTTPResponse, Error> {
