@@ -106,24 +106,26 @@ fn fetch_from_providers(track: &TrackInfo, cfg: &PluginConfig) -> FetchOutcome {
 }
 
 fn write_lyrics_if_enabled(track: &TrackInfo, lyrics: &Lyrics, cfg: &PluginConfig) {
-    if cfg.write_lyrics && writing::write(track, lyrics, cfg).is_err() {
-        warn!("failed to write lyrics file to disk");
+    if cfg.write_lyrics
+        && let Err(err) = writing::write(track, lyrics, cfg)
+    {
+        warn!("failed to write lyrics file to disk: {err}");
     }
 }
 
 fn save_to_cache(cache: &Option<LyricsCache>, track_id: &str, lyrics: &Lyrics, cfg: &PluginConfig) {
     if let Some(cache) = cache
-        && cache.write(track_id, lyrics, cfg).is_err()
+        && let Err(err) = cache.write(track_id, lyrics, cfg)
     {
-        warn!("failed to persist lyrics to cache");
+        warn!("failed to persist lyrics to cache: {err}");
     }
 }
 
 fn save_negative_to_cache(cache: &Option<LyricsCache>, track_id: &str) {
     if let Some(cache) = cache
-        && cache.write_negative(track_id).is_err()
+        && let Err(err) = cache.write_negative(track_id)
     {
-        warn!("failed to persist negative cache entry");
+        warn!("failed to persist negative cache entry: {err}");
     }
 }
 
