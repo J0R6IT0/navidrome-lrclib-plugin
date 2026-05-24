@@ -1,5 +1,6 @@
 use crate::{
     config::PluginConfig,
+    format::lrc,
     providers::{FIREFOX_USER_AGENT, LyricsProvider},
     types::Lyrics,
 };
@@ -85,7 +86,11 @@ impl LyricsProvider for Kugou {
 
         let lrc = download_lrc(&candidate.id, &candidate.accesskey)?;
 
-        Ok(Some(Lyrics::Synced(lrc)))
+        if lrc::is_instrumental(&lrc) {
+            Ok(Some(Lyrics::Instrumental))
+        } else {
+            Ok(Some(Lyrics::Synced(lrc)))
+        }
     }
 }
 

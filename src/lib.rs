@@ -11,9 +11,9 @@ use nd_pdk::lyrics::{
 
 mod cache;
 mod config;
+mod format;
 mod providers;
 mod registry;
-mod sanitize;
 mod types;
 mod writing;
 
