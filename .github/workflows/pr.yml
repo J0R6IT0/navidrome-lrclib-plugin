@@ -1,0 +1,32 @@
+name: "Pipeline: PR"
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Pipeline
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - name: Run tests
+        run: cargo test
+
+      - name: Build plugin
+        run: make release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nd-lyrics
+          path: nd-lyrics.ndp

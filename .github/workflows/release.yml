@@ -21,29 +21,17 @@ jobs:
         with:
           targets: wasm32-wasip1
 
-      - name: Build
-        run: cargo build --release --target wasm32-wasip1
-
-      - name: Prepare bundle
-        run: |
-          mkdir bundle
-
-          cp manifest.json bundle/
-
-          cp target/wasm32-wasip1/release/*.wasm bundle/plugin.wasm
-
-      - name: Create .ndp package
-        run: |
-          cd bundle
-          zip -r ../plugin.ndp .
+      - name: Build release package
+        run: make build
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: plugin
-          path: plugin.ndp
+          name: nd-lyrics
+          path: nd-lyrics.ndp
 
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: plugin.ndp
+          files: nd-lyrics.ndp
