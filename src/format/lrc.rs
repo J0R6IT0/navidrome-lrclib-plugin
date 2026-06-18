@@ -111,6 +111,12 @@ pub fn is_instrumental(lyrics: &str) -> bool {
     INSTRUMENTAL_MARKERS.iter().any(|m| lower.contains(m))
 }
 
+pub fn is_synced(lyrics: &str) -> bool {
+    lyrics
+        .lines()
+        .any(|line| matches!(parse_line(line), Some((Some(_), _))))
+}
+
 fn parse_line(line: &str) -> Option<(Option<f64>, &str)> {
     let trimmed = line.trim_start_matches('\u{feff}').trim();
 
@@ -139,6 +145,7 @@ fn parse_line(line: &str) -> Option<(Option<f64>, &str)> {
 #[cfg(test)]
 mod tests {
     use super::is_instrumental;
+    use super::is_synced;
     use super::sanitize;
 
     mod sanitize_tests {
@@ -362,6 +369,55 @@ mod tests {
             let input = concat!("[offset:0]\n", "[00:01.00]instrumental\n");
 
             assert!(is_instrumental(input));
+        }
+    }
+
+    mod is_synced_tests {
+        use super::is_synced;
+
+        #[test]
+        fn test_real_synced_lrc_is_synced() {
+            let input = concat!("[00:01.00]Hello\n", "[00:05.00]World\n");
+
+            assert!(is_synced(input));
+        }
+
+        #[test]
+        fn test_metadata_tags_before_timed_line_is_synced() {
+            let input = concat!(
+                "[ar:Artist]\n",
+                "[al:Album]\n",
+                "[ti:Title]\n",
+                "[00:01.00]Hello\n"
+            );
+
+            assert!(is_synced(input));
+        }
+
+        #[test]
+        fn test_plain_multiline_text_is_not_synced() {
+            let input = "Hello\nWorld\n";
+
+            assert!(!is_synced(input));
+        }
+
+        #[test]
+        fn test_bracketed_non_time_label_is_not_synced() {
+            let input = "[Verse 1]\nHello\nWorld\n";
+
+            assert!(!is_synced(input));
+        }
+
+        #[test]
+        fn test_empty_input_is_not_synced() {
+            assert!(!is_synced(""));
+        }
+
+        #[test]
+        fn test_bom_is_handled() {
+            let input = "\u{feff}[00:01.00]Hello";
+
+            assert!(is_synced(input));
         }
     }
 }
