@@ -57,7 +57,7 @@ impl NetEase {
 
 impl LyricsProvider for NetEase {
     fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
-        if !cfg.wants_synced() && !cfg.wants_plain() {
+        if !cfg.wants_synced() {
             return Ok(None);
         }
 
