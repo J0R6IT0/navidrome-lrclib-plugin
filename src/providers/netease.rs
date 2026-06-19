@@ -1,5 +1,6 @@
 use crate::{
     config::PluginConfig,
+    format::lrc,
     providers::{FIREFOX_USER_AGENT, LyricsProvider},
     types::Lyrics,
 };
@@ -75,7 +76,7 @@ impl LyricsProvider for NetEase {
             None => return Ok(None),
         };
 
-        fetch_lrc(song.id)
+        fetch_lrc(song.id, cfg)
     }
 }
 
@@ -103,7 +104,7 @@ fn search_song(query: &str, target_ms: u64) -> Result<Option<Song>, Error> {
     }))
 }
 
-fn fetch_lrc(song_id: u64) -> Result<Option<Lyrics>, Error> {
+fn fetch_lrc(song_id: u64, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
     let qs = serde_urlencoded::to_string([
         ("id", song_id.to_string()),
         ("kv", "-1".to_string()),
@@ -124,15 +125,26 @@ fn fetch_lrc(song_id: u64) -> Result<Option<Lyrics>, Error> {
     let parsed: LyricsResponse = serde_json::from_slice(&response.body)
         .map_err(|e| Error::new(format!("netease: failed to parse lyrics response: {e}")))?;
 
-    Ok(if parsed.pure_music {
-        Some(Lyrics::Instrumental)
+    if parsed.pure_music {
+        return Ok(Some(Lyrics::Instrumental));
+    }
+
+    let text = match parsed.lrc.and_then(|l| l.lyric) {
+        Some(text) if !text.trim().is_empty() => text,
+        _ => return Ok(None),
+    };
+
+    if lrc::is_synced(&text) {
+        if !cfg.wants_synced() {
+            return Ok(None);
+        }
+        Ok(Some(Lyrics::Synced(text)))
     } else {
-        parsed
-            .lrc
-            .and_then(|l| l.lyric)
-            .filter(|s| !s.trim().is_empty())
-            .map(Lyrics::Synced)
-    })
+        if !cfg.wants_plain() {
+            return Ok(None);
+        }
+        Ok(Some(Lyrics::Plain(text)))
+    }
 }
 
 fn send_request(url: &str) -> Result<HTTPResponse, Error> {
