@@ -48,13 +48,36 @@ const INSTRUMENTAL_MARKERS: &[&str] = &["instrumental", "纯音乐", "no lyrics"
 /// instrumental marker.
 const MAX_INSTRUMENTAL_TIMED_LINES: usize = 3;
 
+/// A blank (timestamp-only) line is kept only when the gap to the next line is
+/// at least this long. Shorter gaps are provider noise, not a real instrumental
+/// pause, and a long enough gap can also let a stripped section label leave one
+/// blank line behind.
+pub(crate) const BLANK_GAP_MIN_SECS: f64 = 5.0;
+
 pub fn sanitize(lrc: &str) -> String {
     let mut first_time_tag_seen = false;
 
-    lrc.lines()
+    let kept: Vec<&str> = lrc
+        .lines()
         .filter(|line| keep_line(line, &mut first_time_tag_seen))
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect();
+
+    let mut out: Vec<&str> = Vec::with_capacity(kept.len());
+    for (i, &line) in kept.iter().enumerate() {
+        if is_blank_timed_line(line) {
+            let next = kept.get(i + 1).and_then(|l| time_tag_secs(l));
+            let long_gap = matches!(
+                (time_tag_secs(line), next),
+                (Some(start), Some(end)) if end - start >= BLANK_GAP_MIN_SECS
+            );
+            if !long_gap {
+                continue;
+            }
+        }
+        out.push(line);
+    }
+
+    out.join("\n")
 }
 
 pub fn is_instrumental(lyrics: &str) -> bool {
@@ -76,6 +99,13 @@ pub fn is_synced(lyrics: &str) -> bool {
     lyrics
         .lines()
         .any(|line| matches!(parse_line(line), Some((Some(_), _))))
+}
+
+pub(crate) fn time_tag_secs(line: &str) -> Option<f64> {
+    match parse_line(line) {
+        Some((Some(secs), _)) => Some(secs),
+        _ => None,
+    }
 }
 
 pub(crate) fn is_blank_timed_line(line: &str) -> bool {
@@ -265,6 +295,30 @@ mod tests {
         #[test]
         fn test_empty_input() {
             assert_eq!(sanitize(""), "");
+        }
+
+        #[test]
+        fn test_short_gap_blank_line_dropped() {
+            let input = "[00:44.95]A song in every breath\n[00:47.60]\n[00:48.36]Sing me";
+            assert_eq!(
+                sanitize(input),
+                "[00:44.95]A song in every breath\n[00:48.36]Sing me"
+            );
+        }
+
+        #[test]
+        fn test_long_gap_blank_line_kept() {
+            let input = "[00:44.95]A song\n[00:47.60]\n[00:55.00]Sing me";
+            assert_eq!(
+                sanitize(input),
+                "[00:44.95]A song\n[00:47.60]\n[00:55.00]Sing me"
+            );
+        }
+
+        #[test]
+        fn test_trailing_blank_line_dropped() {
+            let input = "[00:44.95]Last line\n[00:47.60]";
+            assert_eq!(sanitize(input), "[00:44.95]Last line");
         }
 
         #[test]

@@ -34,6 +34,9 @@ pub fn strip_section_labels(lyrics: &str) -> String {
         }
 
         if run_has_label {
+            if gap_warrants_blank(&pending, &cleaned) {
+                out.push(pending.remove(0));
+            }
             pending.clear();
         } else {
             out.append(&mut pending);
@@ -48,6 +51,17 @@ pub fn strip_section_labels(lyrics: &str) -> String {
     }
 
     out.join("\n")
+}
+
+fn gap_warrants_blank(pending: &[String], next: &str) -> bool {
+    let (Some(start), Some(end)) = (
+        pending.first().and_then(|l| lrc::time_tag_secs(l)),
+        lrc::time_tag_secs(next),
+    ) else {
+        return false;
+    };
+
+    end - start >= lrc::BLANK_GAP_MIN_SECS
 }
 
 #[cfg(test)]
@@ -132,7 +146,21 @@ mod tests {
         #[test]
         fn test_lrc_label_and_blanks_both_sides_removed() {
             let input = "[00:00.00]A\n[00:02.00]\n[00:04.00][Verse]\n[00:06.00]\n[00:08.00]B";
-            let expected = "[00:00.00]A\n[00:08.00]B";
+            let expected = "[00:00.00]A\n[00:02.00]\n[00:08.00]B";
+            assert_eq!(strip_section_labels(input), expected);
+        }
+
+        #[test]
+        fn test_lrc_large_gap_keeps_blank() {
+            let input = "[00:01.00]Foo\n[00:03.00]\n[00:03.00][Chorus]\n[00:10.00]Bar";
+            let expected = "[00:01.00]Foo\n[00:03.00]\n[00:10.00]Bar";
+            assert_eq!(strip_section_labels(input), expected);
+        }
+
+        #[test]
+        fn test_lrc_small_gap_drops_blank() {
+            let input = "[00:01.00]Foo\n[00:03.00]\n[00:03.00][Chorus]\n[00:04.00]Bar";
+            let expected = "[00:01.00]Foo\n[00:04.00]Bar";
             assert_eq!(strip_section_labels(input), expected);
         }
 
