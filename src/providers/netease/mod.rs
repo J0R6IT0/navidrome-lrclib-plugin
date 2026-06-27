@@ -1,7 +1,7 @@
 use crate::{
     config::PluginConfig,
     format::lrc,
-    providers::{FIREFOX_USER_AGENT, LyricsProvider},
+    providers::{BROWSER_USER_AGENT, LyricsProvider},
     types::{Lyrics, LyricsKind},
 };
 use nd_pdk::{
@@ -187,7 +187,7 @@ fn get_json<T: serde::de::DeserializeOwned>(
 
 fn send_request(url: &str) -> Result<HTTPResponse, Error> {
     let mut headers = HashMap::new();
-    headers.insert("User-Agent".into(), FIREFOX_USER_AGENT.into());
+    headers.insert("User-Agent".into(), BROWSER_USER_AGENT.into());
     headers.insert("Referer".into(), "https://music.163.com".into());
 
     http::send(HTTPRequest {

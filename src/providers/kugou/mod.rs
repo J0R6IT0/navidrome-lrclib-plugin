@@ -1,7 +1,7 @@
 use crate::{
     config::PluginConfig,
     format::lrc,
-    providers::{FIREFOX_USER_AGENT, LyricsProvider},
+    providers::{BROWSER_USER_AGENT, LyricsProvider},
     types::{Lyrics, LyricsKind},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -234,7 +234,7 @@ fn download_raw(id: &str, accesskey: &str, fmt: &str) -> Result<Vec<u8>, Error> 
 
 fn send_request(url: &str) -> Result<HTTPResponse, Error> {
     let mut headers = HashMap::new();
-    headers.insert("User-Agent".into(), FIREFOX_USER_AGENT.into());
+    headers.insert("User-Agent".into(), BROWSER_USER_AGENT.into());
 
     http::send(HTTPRequest {
         url: url.into(),
