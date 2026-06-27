@@ -1,6 +1,7 @@
 use crate::types::LyricsKind;
 use extism_pdk::warn;
 use nd_pdk::{host::config, lyrics::Error as LyricsError};
+use serde::Deserialize;
 use std::{collections::HashSet, fmt};
 
 const DEFAULT_CACHE_TTL: i64 = 168;
@@ -199,7 +200,7 @@ fn resolve_negative_cache_ttl() -> Result<i64, LyricsError> {
 }
 
 fn resolve_providers() -> Result<Vec<ProviderEntry>, LyricsError> {
-    let providers = get_string("providers")?
+    let providers = get_string("providersList")?
         .map(|s| parse_providers(&s))
         .unwrap_or_default();
 
@@ -210,43 +211,33 @@ fn resolve_providers() -> Result<Vec<ProviderEntry>, LyricsError> {
     Ok(providers)
 }
 
-fn parse_providers(raw: &str) -> Vec<ProviderEntry> {
-    let mut seen = HashSet::new();
-    raw.split(',')
-        .filter_map(parse_provider_entry)
-        .filter(|entry| seen.insert(entry.clone()))
-        .collect()
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProviderRow {
+    #[serde(default)]
+    provider: String,
+    #[serde(default)]
+    base_url: String,
 }
 
-fn parse_provider_entry(raw: &str) -> Option<ProviderEntry> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
+fn parse_providers(raw: &str) -> Vec<ProviderEntry> {
+    let rows: Vec<ProviderRow> = serde_json::from_str(raw).unwrap_or_default();
 
-    if let Some(paren_pos) = trimmed.find('(')
-        && trimmed.ends_with(')')
-    {
-        let name = trimmed[..paren_pos].trim();
-        if name.is_empty() {
-            return None;
-        }
-        let param = trimmed[paren_pos + 1..trimmed.len() - 1].trim();
-        let param = if param.is_empty() {
-            None
-        } else {
-            Some(param.to_string())
-        };
-        return Some(ProviderEntry {
-            name: name.to_string(),
-            param,
-        });
-    }
-
-    Some(ProviderEntry {
-        name: trimmed.to_string(),
-        param: None,
-    })
+    let mut seen = HashSet::new();
+    rows.into_iter()
+        .filter_map(|row| {
+            let name = row.provider.trim();
+            if name.is_empty() {
+                return None;
+            }
+            let param = row.base_url.trim();
+            Some(ProviderEntry {
+                name: name.to_string(),
+                param: (!param.is_empty()).then(|| param.to_string()),
+            })
+        })
+        .filter(|entry| seen.insert(entry.clone()))
+        .collect()
 }
 
 fn normalize_extension(ext: &str) -> String {
@@ -337,97 +328,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_providers_basic() {
-        assert_eq!(
-            parse_providers("lrclib,lyrics.ovh"),
-            vec![entry("lrclib", None), entry("lyrics.ovh", None)]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_single() {
-        assert_eq!(parse_providers("lrclib"), vec![entry("lrclib", None)]);
-    }
-
-    #[test]
-    fn test_parse_providers_whitespace() {
-        assert_eq!(
-            parse_providers(" lrclib , lyrics.ovh "),
-            vec![entry("lrclib", None), entry("lyrics.ovh", None)]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_empty_entries() {
-        assert_eq!(
-            parse_providers("lrclib,,lyrics.ovh"),
-            vec![entry("lrclib", None), entry("lyrics.ovh", None)]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_empty_string() {
-        assert_eq!(parse_providers(""), Vec::<ProviderEntry>::new());
-    }
-
-    #[test]
-    fn test_parse_providers_just_comma() {
-        assert_eq!(parse_providers(","), Vec::<ProviderEntry>::new());
-    }
-
-    #[test]
-    fn test_parse_providers_parameterized() {
-        assert_eq!(
-            parse_providers("lrclib(http://localhost:7592)"),
-            vec![entry("lrclib", Some("http://localhost:7592"))]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_mixed_parameterized_and_plain() {
-        assert_eq!(
-            parse_providers("lrclib(http://localhost:7592),lrclib,lyrics.ovh"),
-            vec![
-                entry("lrclib", Some("http://localhost:7592")),
-                entry("lrclib", None),
-                entry("lyrics.ovh", None),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_dedup_exact_duplicates() {
-        assert_eq!(
-            parse_providers("lrclib,lyrics.ovh,lrclib"),
-            vec![entry("lrclib", None), entry("lyrics.ovh", None)]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_parameterized_not_deduped_with_plain() {
-        assert_eq!(
-            parse_providers("lrclib(http://localhost:7592),lrclib"),
-            vec![
-                entry("lrclib", Some("http://localhost:7592")),
-                entry("lrclib", None),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_dedup_parameterized_duplicates() {
-        assert_eq!(
-            parse_providers("lrclib(http://x),lyrics.ovh,lrclib(http://x)"),
-            vec![entry("lrclib", Some("http://x")), entry("lyrics.ovh", None),]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_empty_param_treated_as_none() {
-        assert_eq!(parse_providers("lrclib()"), vec![entry("lrclib", None)]);
-    }
-
-    #[test]
     fn test_display_name_with_param() {
         let e = entry("lrclib", Some("http://localhost:7592"));
         assert_eq!(e.display_name(), "lrclib(http://localhost:7592)");
@@ -437,5 +337,49 @@ mod tests {
     fn test_display_name_without_param() {
         let e = entry("lrclib", None);
         assert_eq!(e.display_name(), "lrclib");
+    }
+
+    #[test]
+    fn test_parse_providers_json_basic() {
+        assert_eq!(
+            parse_providers(r#"[{"provider":"lrclib"},{"provider":"lyrics.ovh"}]"#),
+            vec![entry("lrclib", None), entry("lyrics.ovh", None)]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_json_with_base_url() {
+        assert_eq!(
+            parse_providers(r#"[{"provider":"lrclib","baseUrl":"http://localhost:7592"}]"#),
+            vec![entry("lrclib", Some("http://localhost:7592"))]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_json_blank_base_url_is_none() {
+        assert_eq!(
+            parse_providers(r#"[{"provider":"lrclib","baseUrl":"   "}]"#),
+            vec![entry("lrclib", None)]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_json_skips_empty_provider_and_dedups() {
+        assert_eq!(
+            parse_providers(
+                r#"[{"provider":""},{"provider":"kugou"},{"provider":"kugou"},{"provider":"netease"}]"#
+            ),
+            vec![entry("kugou", None), entry("netease", None)]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_json_invalid_is_empty() {
+        assert_eq!(parse_providers("not json"), Vec::<ProviderEntry>::new());
+    }
+
+    #[test]
+    fn test_parse_providers_json_empty_array() {
+        assert_eq!(parse_providers("[]"), Vec::<ProviderEntry>::new());
     }
 }

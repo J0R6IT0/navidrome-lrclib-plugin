@@ -29,21 +29,12 @@ directly when available. This will only work if "Write to custom path" is disabl
 
 At this time, the following providers are available. Please report any issues you encounter while using them.
 
-You can optionally pass parameters to a provider by placing them in parentheses after the provider name.
-Providers with and without parameters can be mixed together in the same list.
-
-The following example will first try to fetch lyrics from `http://my_custom_lrclib.net`, then fall back to default `lrclib` and `lyrics.ovh` if no lyrics are found.
-
-```
-lrclib(http://my_custom_lrclib.net),lrclib,lyrics.ovh
-```
-
-| Provider   | Type           | Optional parameters |
-| ---------- | -------------- | ------------------- |
-| lrclib     | plain + synced | (Base URL)          |
-| lyrics.ovh | plain          | (Base URL)          |
-| kugou      | synced         |                     |
-| netease    | synced         |                     |
+| Provider   | Type                 | Custom parameters |
+| ---------- | -------------------- | ----------------- |
+| lrclib     | plain,lrc,lyricsfile | Base URL          |
+| lyrics.ovh | plain                | Base URL          |
+| kugou      | lrc                  |                   |
+| netease    | lrc                  |                   |
 
 ## Path variables
 
@@ -63,16 +54,16 @@ This will be transfored into something like this:
 
 Note that the extension is appended automatically based on the configuration and lyrics type.
 
-| Variable             | Description                                              |
-| -------------------- | -------------------------------------------------------- |
+| Variable             | Description                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------ |
 | {type}               | The type of lyrics ("plain", "lrc", "elrc", "ttml", "srt", "lyricsfile" or "instrumental") |
-| {track:id}           | The ID of the track                                      |
-| {track:title}        | The title of the track                                   |
-| {track:album}        | The name of the album this track belongs to              |
-| {track:artist}       | The artist of the track                                  |
-| {track:album_artist} | The artist of the album this track belongs to            |
-| {track:track_number} | The number of track in the album\*                       |
-| {track:disc_number}  | The number of the disc in the album\*                    |
+| {track:id}           | The ID of the track                                                                        |
+| {track:title}        | The title of the track                                                                     |
+| {track:album}        | The name of the album this track belongs to                                                |
+| {track:artist}       | The artist of the track                                                                    |
+| {track:album_artist} | The artist of the album this track belongs to                                              |
+| {track:track_number} | The number of track in the album\*                                                         |
+| {track:disc_number}  | The number of the disc in the album\*                                                      |
 
 \* {track:track_number} and {track:disc_number} accept a padding argument to fill with 0s:
 

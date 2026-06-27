@@ -43,11 +43,32 @@
           "default": false
         },
 
-        "providers": {
-          "type": "string",
+        "providersList": {
+          "type": "array",
           "title": "Lyrics providers",
-          "default": "lrclib,lyrics.ovh",
-          "description": "Comma-separated list of providers to use, ordered by priority. See the GitHub page for available providers."
+          "default": [{ "provider": "lrclib" }, { "provider": "lyrics.ovh" }],
+          "items": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "title": "Provider",
+                "default": "lrclib",
+                "oneOf": [
+                  { "const": "lrclib", "title": "LRCLIB" },
+                  { "const": "lyrics.ovh", "title": "lyrics.ovh" },
+                  { "const": "kugou", "title": "KuGou" },
+                  { "const": "netease", "title": "NetEase" }
+                ]
+              },
+              "baseUrl": {
+                "type": "string",
+                "title": "Custom base URL",
+                "description": "Optional. Leave empty to use the provider's default."
+              }
+            },
+            "required": ["provider"]
+          }
         },
 
         "enableCache": {
@@ -162,8 +183,38 @@
           "label": "Providers",
           "elements": [
             {
+              "type": "Label",
+              "text": "The list of providers to query, ordered by priority. The same provider can be included multiple times with different parameters (for example, lrclib with a custom base URL and with the default)."
+            },
+            {
               "type": "Control",
-              "scope": "#/properties/providers"
+              "scope": "#/properties/providersList",
+              "options": {
+                "showSortButtons": true,
+                "elementLabelProp": "provider",
+                "detail": {
+                  "type": "VerticalLayout",
+                  "elements": [
+                    {
+                      "type": "Control",
+                      "scope": "#/properties/provider"
+                    },
+                    {
+                      "type": "Control",
+                      "scope": "#/properties/baseUrl",
+                      "rule": {
+                        "effect": "SHOW",
+                        "condition": {
+                          "scope": "#/properties/provider",
+                          "schema": {
+                            "enum": ["lrclib", "lyrics.ovh"]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
             }
           ]
         },
