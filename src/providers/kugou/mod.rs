@@ -5,12 +5,15 @@ use crate::{
     types::{Lyrics, LyricsKind},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
+use extism_pdk::warn;
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
     lyrics::{Error, TrackInfo},
 };
 use serde::Deserialize;
 use std::collections::HashMap;
+
+mod krc;
 
 const SONG_SEARCH_URL: &str = "http://mobilecdn.kugou.com/api/v3/search/song";
 const LYRICS_SEARCH_URL: &str = "http://lyrics.kugou.com/search";
@@ -51,6 +54,8 @@ struct LyricsSearchResponse {
 struct Candidate {
     id: String,
     accesskey: String,
+    #[serde(default)]
+    krctype: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,10 +73,10 @@ impl Kugou {
 
 impl LyricsProvider for Kugou {
     fn supported_kinds(&self) -> &'static [LyricsKind] {
-        &[LyricsKind::Lrc]
+        &[LyricsKind::Lrc, LyricsKind::Elrc]
     }
 
-    fn fetch_lyrics(&self, track: &TrackInfo, _cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
+    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
         let first_artist = track
             .artists
             .first()
@@ -99,13 +104,36 @@ impl LyricsProvider for Kugou {
             None => return Ok(None),
         };
 
-        let lrc = download_lrc(&candidate.id, &candidate.accesskey)?;
+        for &kind in cfg.resolve_order() {
+            match kind {
+                LyricsKind::Elrc if candidate.krctype != 0 => {
+                    let bytes = download_raw(&candidate.id, &candidate.accesskey, "krc")?;
+                    match krc::to_enhanced_lrc(&bytes) {
+                        Ok(elrc) if !elrc.trim().is_empty() => {
+                            return Ok(Some(Lyrics::Elrc(elrc)));
+                        }
+                        Ok(_) => {}
+                        Err(e) => warn!("kugou: failed to decode krc lyrics: {e}"),
+                    }
+                }
+                LyricsKind::Lrc => {
+                    let bytes = download_raw(&candidate.id, &candidate.accesskey, "lrc")?;
+                    let lrc = String::from_utf8(bytes).map_err(|e| {
+                        Error::new(format!("kugou: lyrics content is not valid UTF-8: {e}"))
+                    })?;
 
-        if lrc::is_instrumental(&lrc) {
-            Ok(Some(Lyrics::Instrumental))
-        } else {
-            Ok(Some(Lyrics::Lrc(lrc)))
+                    if lrc::is_instrumental(&lrc) {
+                        return Ok(Some(Lyrics::Instrumental));
+                    }
+                    if !lrc.trim().is_empty() {
+                        return Ok(Some(Lyrics::Lrc(lrc)));
+                    }
+                }
+                _ => {}
+            }
         }
+
+        Ok(None)
     }
 }
 
@@ -176,13 +204,13 @@ fn find_candidate(hash: &str, duration: Option<u64>) -> Result<Option<Candidate>
     Ok(parsed.candidates.into_iter().next())
 }
 
-fn download_lrc(id: &str, accesskey: &str) -> Result<String, Error> {
+fn download_raw(id: &str, accesskey: &str, fmt: &str) -> Result<Vec<u8>, Error> {
     let query = serde_urlencoded::to_string([
         ("ver", "1"),
         ("client", "pc"),
         ("id", id),
         ("accesskey", accesskey),
-        ("fmt", "lrc"),
+        ("fmt", fmt),
         ("charset", "utf8"),
     ])
     .map_err(|e| Error::new(format!("kugou: failed to encode download query: {e}")))?;
@@ -199,12 +227,9 @@ fn download_lrc(id: &str, accesskey: &str) -> Result<String, Error> {
     let parsed: DownloadResponse = serde_json::from_slice(&response.body)
         .map_err(|e| Error::new(format!("kugou: failed to parse download response: {e}")))?;
 
-    let bytes = STANDARD
+    STANDARD
         .decode(&parsed.content)
-        .map_err(|e| Error::new(format!("kugou: failed to decode lyrics content: {e}")))?;
-
-    String::from_utf8(bytes)
-        .map_err(|e| Error::new(format!("kugou: lyrics content is not valid UTF-8: {e}")))
+        .map_err(|e| Error::new(format!("kugou: failed to decode lyrics content: {e}")))
 }
 
 fn send_request(url: &str) -> Result<HTTPResponse, Error> {

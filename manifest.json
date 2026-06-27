@@ -109,14 +109,14 @@
           "type": "string",
           "title": "Plain lyrics extension",
           "default": "txt",
-          "description": "File extension for plain lyrics files."
+          "description": "File extension for plain lyrics files. LRC, ELRC, TTML, SRT and YAML files always use their standard extension."
         },
 
         "instrumentalExtension": {
           "type": "string",
           "title": "Instrumental lyrics extension",
           "default": "txt",
-          "description": "File extension for instrumental lyrics files. LRC, ELRC, TTML, SRT and YAML files always use their standard extension."
+          "description": "File extension for instrumental lyrics files."
         },
 
         "overwriteLyrics": {

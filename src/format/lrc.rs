@@ -1,108 +1,69 @@
+use std::borrow::Cow;
+
+const KEEP_TAGS: &[&str] = &["offset"];
+
+const CREDIT_PREFIXES: &[&str] = &[
+    "Lyrics by",
+    "Composed by",
+    "Produced by",
+    "Published by",
+    "Vocals by",
+    "Background Vocals by",
+    "Additional Vocal by",
+    "Mixing Engineer",
+    "Mastered by",
+    "Executive Producer",
+    "Vocal Engineer",
+    "Vocals Produced by",
+    "Recorded at",
+    "Repertoire Owner",
+    "Written by",
+    "Arranged by",
+    "Music by",
+    "Words by",
+    "Lyrics",
+    "Composer",
+    "Lyricist",
+    "Arranger",
+    "Translator",
+    "Adapted by",
+    "作词",
+    "作曲",
+    "编曲",
+    "制作人",
+    "录音",
+    "混音",
+    "母带",
+    "出品人",
+    "翻译",
+];
+
+/// A leading "Artist - Title" header is only stripped when its timestamp is
+/// within this many seconds of the start.
+const TITLE_HEADER_MAX_SECS: f64 = 5.0;
+
+const INSTRUMENTAL_MARKERS: &[&str] = &["instrumental", "纯音乐", "no lyrics"];
+
+/// More than this many timed lines means the track has real lyrics, not just an
+/// instrumental marker.
+const MAX_INSTRUMENTAL_TIMED_LINES: usize = 3;
+
 pub fn sanitize(lrc: &str) -> String {
-    const KEEP_TAGS: &[&str] = &["offset"];
-
-    const CREDIT_PREFIXES: &[&str] = &[
-        "Lyrics by",
-        "Composed by",
-        "Produced by",
-        "Published by",
-        "Vocals by",
-        "Background Vocals by",
-        "Additional Vocal by",
-        "Mixing Engineer",
-        "Mastered by",
-        "Executive Producer",
-        "Vocal Engineer",
-        "Vocals Produced by",
-        "Recorded at",
-        "Repertoire Owner",
-        "Written by",
-        "Arranged by",
-        "Music by",
-        "Words by",
-        "Lyrics",
-        "Composer",
-        "Lyricist",
-        "Arranger",
-        "Translator",
-        "Adapted by",
-        "作词",
-        "作曲",
-        "编曲",
-        "制作人",
-        "录音",
-        "混音",
-        "母带",
-        "出品人",
-        "翻译",
-    ];
-
-    let mut first_time_tag_processed = false;
+    let mut first_time_tag_seen = false;
 
     lrc.lines()
-        .filter(|line| {
-            let trimmed = line.trim_start_matches('\u{feff}').trim();
-            let mut text = trimmed;
-
-            if let Some((time_tag_secs, parsed_text)) = parse_line(trimmed) {
-                text = parsed_text;
-
-                if let Some(total_secs) = time_tag_secs {
-                    if !first_time_tag_processed {
-                        first_time_tag_processed = true;
-
-                        let has_title_dash = text.contains(" - ");
-                        let has_letters = text.chars().any(|c| c.is_alphabetic());
-
-                        if total_secs < 5.0 && has_title_dash && has_letters {
-                            return false;
-                        }
-                    }
-                } else if let Some(rest) = trimmed.strip_prefix('[')
-                    && let Some(bracket_end) = rest.find(']')
-                {
-                    let content = &rest[..bracket_end];
-
-                    if let Some((key, _)) = content.split_once(':') {
-                        if !KEEP_TAGS.contains(&key) {
-                            return false;
-                        }
-                    } else {
-                        return false;
-                    }
-                }
-            }
-
-            let text = text.trim_start();
-
-            for prefix in CREDIT_PREFIXES {
-                if let Some(head) = text.get(..prefix.len()) {
-                    let rest = &text[prefix.len()..];
-
-                    let rest_trimmed = rest.trim_start_matches(' ');
-                    if head.eq_ignore_ascii_case(prefix)
-                        && (rest_trimmed.starts_with(':') || rest_trimmed.starts_with('：'))
-                    {
-                        return false;
-                    }
-                }
-            }
-
-            true
-        })
+        .filter(|line| keep_line(line, &mut first_time_tag_seen))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
 pub fn is_instrumental(lyrics: &str) -> bool {
-    const INSTRUMENTAL_MARKERS: &[&str] = &["instrumental", "纯音乐", "no lyrics"];
-
     let timed_lines = lyrics
         .lines()
         .filter(|line| matches!(parse_line(line), Some((Some(_), _))))
         .count();
 
-    if timed_lines > 3 {
+    if timed_lines > MAX_INSTRUMENTAL_TIMED_LINES {
         return false;
     }
 
@@ -115,6 +76,88 @@ pub fn is_synced(lyrics: &str) -> bool {
     lyrics
         .lines()
         .any(|line| matches!(parse_line(line), Some((Some(_), _))))
+}
+
+fn keep_line(line: &str, first_time_tag_seen: &mut bool) -> bool {
+    let trimmed = line.trim_start_matches('\u{feff}').trim();
+
+    let lyric_text = match parse_line(trimmed) {
+        Some((Some(secs), text)) => {
+            if !*first_time_tag_seen {
+                *first_time_tag_seen = true;
+                if secs < TITLE_HEADER_MAX_SECS && is_title_header(text) {
+                    return false;
+                }
+            }
+            text
+        }
+        Some((None, _)) => {
+            if is_droppable_metadata(trimmed) {
+                return false;
+            }
+            return true;
+        }
+        None => trimmed,
+    };
+
+    !is_credit_line(lyric_text)
+}
+
+fn is_title_header(text: &str) -> bool {
+    let plain = strip_word_tags(text);
+    plain.contains(" - ") && plain.chars().any(|c| c.is_alphabetic())
+}
+
+fn is_droppable_metadata(line: &str) -> bool {
+    let content = line
+        .strip_prefix('[')
+        .and_then(|rest| rest.split(']').next())
+        .unwrap_or_default();
+
+    match content.split_once(':') {
+        Some((key, _)) => !KEEP_TAGS.contains(&key),
+        None => true,
+    }
+}
+
+fn is_credit_line(text: &str) -> bool {
+    let plain = strip_word_tags(text);
+    let plain = plain.trim_start();
+
+    CREDIT_PREFIXES.iter().any(|prefix| {
+        plain
+            .get(..prefix.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
+            && {
+                let rest = plain[prefix.len()..].trim_start_matches(' ');
+                rest.starts_with(':') || rest.starts_with('：')
+            }
+    })
+}
+
+fn strip_word_tags(text: &str) -> Cow<'_, str> {
+    if !text.contains('<') {
+        return Cow::Borrowed(text);
+    }
+
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+
+    while let Some(open) = rest.find('<') {
+        let after = &rest[open + 1..];
+        let is_tag = after.starts_with(|c: char| c.is_ascii_digit());
+
+        if let Some(close) = is_tag.then(|| after.find('>')).flatten() {
+            out.push_str(&rest[..open]);
+            rest = &after[close + 1..];
+        } else {
+            out.push_str(&rest[..=open]);
+            rest = &rest[open + 1..];
+        }
+    }
+
+    out.push_str(rest);
+    Cow::Owned(out)
 }
 
 fn parse_line(line: &str) -> Option<(Option<f64>, &str)> {
@@ -147,6 +190,40 @@ mod tests {
     use super::is_instrumental;
     use super::is_synced;
     use super::sanitize;
+    use super::strip_word_tags;
+
+    mod strip_word_tags_tests {
+        use super::strip_word_tags;
+        use std::borrow::Cow;
+
+        #[test]
+        fn test_no_tags_borrows_input() {
+            assert!(matches!(strip_word_tags("plain text"), Cow::Borrowed(_)));
+        }
+
+        #[test]
+        fn test_strips_word_timing_tags() {
+            assert_eq!(
+                strip_word_tags("<00:00.00>Hello <00:00.50>world"),
+                "Hello world"
+            );
+        }
+
+        #[test]
+        fn test_keeps_non_digit_angle_brackets() {
+            assert_eq!(strip_word_tags("a <b> c"), "a <b> c");
+        }
+
+        #[test]
+        fn test_unclosed_digit_bracket_is_kept() {
+            assert_eq!(strip_word_tags("I <3 it"), "I <3 it");
+        }
+
+        #[test]
+        fn test_tag_at_end_without_close_is_kept() {
+            assert_eq!(strip_word_tags("done <12:34"), "done <12:34");
+        }
+    }
 
     mod sanitize_tests {
         use super::sanitize;
@@ -278,6 +355,30 @@ mod tests {
                 sanitize(input),
                 "[00:06.600]He's a fairy feller\n[00:20.860]Ah ah the fairy folk have gathered\n[00:22.590]Round the new moon's shine"
             );
+        }
+
+        #[test]
+        fn test_enhanced_lrc_title_line_filtered() {
+            let input = concat!(
+                "[00:00.00]<00:00.00>Artist <00:00.50>- <00:01.00>Title\n",
+                "[00:06.00]<00:06.00>First <00:06.50>line"
+            );
+            assert_eq!(sanitize(input), "[00:06.00]<00:06.00>First <00:06.50>line");
+        }
+
+        #[test]
+        fn test_enhanced_lrc_credit_line_filtered() {
+            let input = concat!(
+                "[00:01.00]<00:01.00>Composed <00:01.50>by<00:02.00>: <00:02.50>Someone\n",
+                "[00:06.00]<00:06.00>Hello"
+            );
+            assert_eq!(sanitize(input), "[00:06.00]<00:06.00>Hello");
+        }
+
+        #[test]
+        fn test_enhanced_lrc_word_tags_preserved_in_output() {
+            let input = "[00:06.00]<00:06.00>Hello <00:06.50>world";
+            assert_eq!(sanitize(input), "[00:06.00]<00:06.00>Hello <00:06.50>world");
         }
 
         #[test]
