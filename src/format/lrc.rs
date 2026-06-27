@@ -78,6 +78,13 @@ pub fn is_synced(lyrics: &str) -> bool {
         .any(|line| matches!(parse_line(line), Some((Some(_), _))))
 }
 
+pub(crate) fn is_blank_timed_line(line: &str) -> bool {
+    matches!(
+        parse_line(line),
+        Some((Some(_), text)) if strip_word_tags(text).trim().is_empty()
+    )
+}
+
 fn keep_line(line: &str, first_time_tag_seen: &mut bool) -> bool {
     let trimmed = line.trim_start_matches('\u{feff}').trim();
 
