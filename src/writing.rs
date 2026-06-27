@@ -67,14 +67,20 @@ fn resolve_sidecar_path(
 }
 
 fn resolve_track_path(track: &TrackInfo) -> Result<Option<PathBuf>, LyricsError> {
-    let libraries = library::get_all_libraries()
-        .map_err(|e| LyricsError::new(format!("failed to query libraries: {e}")))?;
+    let library = library::get_library(track.library_id).map_err(|e| {
+        LyricsError::new(format!("failed to get library {}: {e}", track.library_id))
+    })?;
 
-    for lib in libraries {
-        let path = PathBuf::from(lib.mount_point).join(&track.path);
+    if let Some(library) = library {
+        let path = PathBuf::from(library.mount_point).join(&track.path);
         if path.exists() {
             return Ok(Some(path));
         }
+    } else {
+        return Err(LyricsError::new(format!(
+            "library {} not found",
+            track.library_id
+        )));
     }
 
     Ok(None)
@@ -310,10 +316,7 @@ mod tests {
 
         let template = "lyrics/{type}/{track:artist}/{track:title}";
         let path = process_template(template, &track, LyricsKind::Lrc, "lrc");
-        assert_eq!(
-            path,
-            PathBuf::from("lyrics/lrc/Test Artist/Test Song.lrc")
-        );
+        assert_eq!(path, PathBuf::from("lyrics/lrc/Test Artist/Test Song.lrc"));
     }
 
     #[test]
@@ -481,10 +484,7 @@ mod tests {
         let template = r"lyrics\{type}/{track:artist}\{track:title}";
         let path = process_template(template, &track, LyricsKind::Lrc, "lrc");
 
-        assert_eq!(
-            path,
-            PathBuf::from("lyrics/lrc/Test Artist/Test Song.lrc")
-        );
+        assert_eq!(path, PathBuf::from("lyrics/lrc/Test Artist/Test Song.lrc"));
     }
 
     #[test]
