@@ -18,6 +18,8 @@ const DURATION_TOLERANCE_SECS: f32 = 2.0;
 struct LrclibRecord {
     synced_lyrics: Option<String>,
     plain_lyrics: Option<String>,
+    #[serde(default)]
+    lyricsfile: Option<String>,
     duration: Option<f32>,
     #[serde(default)]
     instrumental: bool,
@@ -36,6 +38,10 @@ impl Lrclib {
 }
 
 impl LyricsProvider for Lrclib {
+    fn supported_kinds(&self) -> &'static [LyricsKind] {
+        &[LyricsKind::Lrc, LyricsKind::Plain, LyricsKind::Lyricsfile]
+    }
+
     fn fetch_lyrics(
         &self,
         track: &TrackInfo,
@@ -155,12 +161,13 @@ fn pick_text(record: LrclibRecord, cfg: &PluginConfig) -> Option<Lyrics> {
 
     let synced = record.synced_lyrics.filter(|s| !s.trim().is_empty());
     let plain = record.plain_lyrics.filter(|s| !s.trim().is_empty());
+    let lyricsfile = record.lyricsfile.filter(|s| !s.trim().is_empty());
 
     for &kind in cfg.resolve_order() {
-        // lrclib only serves LRC-synced and plain text; other kinds have no source here.
         let lyrics = match kind {
             LyricsKind::Lrc => synced.as_ref().map(|t| Lyrics::Lrc(t.clone())),
             LyricsKind::Plain => plain.as_ref().map(|t| Lyrics::Plain(t.clone())),
+            LyricsKind::Lyricsfile => lyricsfile.as_ref().map(|t| Lyrics::Lyricsfile(t.clone())),
             _ => None,
         };
 
@@ -189,6 +196,7 @@ mod tests {
         let record = LrclibRecord {
             synced_lyrics: Some("[00:00.00] Hello".to_string()),
             plain_lyrics: Some("Hello".to_string()),
+            lyricsfile: None,
             duration: Some(180.0),
             instrumental: false,
         };
@@ -203,6 +211,7 @@ mod tests {
         let record = LrclibRecord {
             synced_lyrics: None,
             plain_lyrics: Some("Hello".to_string()),
+            lyricsfile: None,
             duration: Some(180.0),
             instrumental: false,
         };
@@ -217,6 +226,7 @@ mod tests {
         let record = LrclibRecord {
             synced_lyrics: Some("   ".to_string()), // whitespace only
             plain_lyrics: Some("Hello".to_string()),
+            lyricsfile: None,
             duration: Some(180.0),
             instrumental: false,
         };
@@ -231,6 +241,7 @@ mod tests {
         let record = LrclibRecord {
             synced_lyrics: None,
             plain_lyrics: None,
+            lyricsfile: None,
             duration: Some(180.0),
             instrumental: true,
         };
@@ -240,11 +251,30 @@ mod tests {
     }
 
     #[test]
+    fn test_pick_text_lyricsfile_priority() {
+        let cfg = make_config(vec![LyricsKind::Lyricsfile, LyricsKind::Lrc]);
+        let record = LrclibRecord {
+            synced_lyrics: Some("[00:00.00] Hello".to_string()),
+            plain_lyrics: None,
+            lyricsfile: Some("version: 1.0\nlines: []".to_string()),
+            duration: Some(180.0),
+            instrumental: false,
+        };
+
+        let result = pick_text(record, &cfg);
+        assert_eq!(
+            result,
+            Some(Lyrics::Lyricsfile("version: 1.0\nlines: []".to_string()))
+        );
+    }
+
+    #[test]
     fn test_pick_text_no_lyrics_available() {
         let cfg = make_config(vec![LyricsKind::Lrc, LyricsKind::Plain]);
         let record = LrclibRecord {
             synced_lyrics: None,
             plain_lyrics: None,
+            lyricsfile: None,
             duration: Some(180.0),
             instrumental: false,
         };

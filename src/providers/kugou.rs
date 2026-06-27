@@ -2,7 +2,7 @@ use crate::{
     config::PluginConfig,
     format::lrc,
     providers::{FIREFOX_USER_AGENT, LyricsProvider},
-    types::Lyrics,
+    types::{Lyrics, LyricsKind},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use nd_pdk::{
@@ -67,11 +67,11 @@ impl Kugou {
 }
 
 impl LyricsProvider for Kugou {
-    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
-        if !cfg.wants_lrc() {
-            return Ok(None);
-        }
+    fn supported_kinds(&self) -> &'static [LyricsKind] {
+        &[LyricsKind::Lrc]
+    }
 
+    fn fetch_lyrics(&self, track: &TrackInfo, _cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
         let first_artist = track
             .artists
             .first()

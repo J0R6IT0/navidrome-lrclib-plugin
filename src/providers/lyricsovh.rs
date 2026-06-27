@@ -1,7 +1,7 @@
 use crate::{
     config::PluginConfig,
     providers::{LyricsProvider, USER_AGENT},
-    types::Lyrics,
+    types::{Lyrics, LyricsKind},
 };
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
@@ -31,11 +31,11 @@ impl LyricsOvh {
 }
 
 impl LyricsProvider for LyricsOvh {
-    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
-        if !cfg.wants_plain() {
-            return Ok(None);
-        }
+    fn supported_kinds(&self) -> &'static [LyricsKind] {
+        &[LyricsKind::Plain]
+    }
 
+    fn fetch_lyrics(&self, track: &TrackInfo, _cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
         let first_artist = track
             .artists
             .first()

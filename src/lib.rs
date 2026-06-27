@@ -85,6 +85,14 @@ fn fetch_from_providers(track: &TrackInfo, cfg: &PluginConfig) -> FetchOutcome {
             continue;
         };
 
+        if !provider
+            .supported_kinds()
+            .iter()
+            .any(|&kind| cfg.wants(kind))
+        {
+            continue;
+        }
+
         match provider.fetch_lyrics(track, cfg) {
             Ok(Some(mut lyrics)) => {
                 lyrics.sanitize(cfg);

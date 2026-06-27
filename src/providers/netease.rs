@@ -2,7 +2,7 @@ use crate::{
     config::PluginConfig,
     format::lrc,
     providers::{FIREFOX_USER_AGENT, LyricsProvider},
-    types::Lyrics,
+    types::{Lyrics, LyricsKind},
 };
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
@@ -56,11 +56,14 @@ impl NetEase {
 }
 
 impl LyricsProvider for NetEase {
-    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
-        if !cfg.wants_lrc() {
-            return Ok(None);
-        }
+    fn supported_kinds(&self) -> &'static [LyricsKind] {
+        // Even though NetEase can sometimes return plain lyrics in the "lrc" field,
+        // that is considered a problem on their side, so plain lyrics are not officially
+        // supported by this provider.
+        &[LyricsKind::Lrc]
+    }
 
+    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
         let first_artist = track
             .artists
             .first()
