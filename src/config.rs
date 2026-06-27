@@ -111,14 +111,6 @@ impl PluginConfig {
         self.lyrics_type_priority.contains(&kind)
     }
 
-    pub fn wants_lrc(&self) -> bool {
-        self.wants(LyricsKind::Lrc)
-    }
-
-    pub fn wants_plain(&self) -> bool {
-        self.wants(LyricsKind::Plain)
-    }
-
     pub fn extension_for(&self, kind: LyricsKind) -> &str {
         match kind {
             LyricsKind::Plain => self.plain_extension.as_str(),

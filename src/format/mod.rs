@@ -4,7 +4,7 @@ pub mod lrc;
 
 pub fn strip_section_labels(lyrics: &str) -> String {
     let re = Regex::new(
-        r"(?i)\[(?:verse|pre[- ]?verse|chorus|pre[- ]?chorus|post[- ]?chorus|bridge|hook|refrain|intro|outro|coda|interlude|instrumental|breakdown|solo|drop|chant|skit|ad-?lib|overture|finale|couplet)\b[^\]]*\]"
+        r"(?i)\[(?:verse|pre[- ]?verse|chorus|pre[- ]?chorus|post[- ]?chorus|bridge|hook|refrain|intro|outro|coda|interlude|instrumental|breakdown|solo|drop|chant|skit|ad-?lib|overture|finale|couplet|pre[- ]?coro|post[- ]?coro|verso|puente|refrán|interludio)\b[^\]]*\]"
     )
     .unwrap();
 

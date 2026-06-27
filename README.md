@@ -34,7 +34,7 @@ At this time, the following providers are available. Please report any issues yo
 | lrclib     | plain,lrc,lyricsfile | Base URL          |
 | lyrics.ovh | plain                | Base URL          |
 | kugou      | lrc,elrc             |                   |
-| netease    | lrc                  |                   |
+| netease    | lrc,elrc             |                   |
 
 ## Path variables
 
