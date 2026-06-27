@@ -157,10 +157,11 @@ fn pick_text(record: LrclibRecord, cfg: &PluginConfig) -> Option<Lyrics> {
     let plain = record.plain_lyrics.filter(|s| !s.trim().is_empty());
 
     for &kind in cfg.resolve_order() {
+        // lrclib only serves LRC-synced and plain text; other kinds have no source here.
         let lyrics = match kind {
-            LyricsKind::Synced => synced.as_ref().map(|t| Lyrics::Synced(t.clone())),
+            LyricsKind::Lrc => synced.as_ref().map(|t| Lyrics::Lrc(t.clone())),
             LyricsKind::Plain => plain.as_ref().map(|t| Lyrics::Plain(t.clone())),
-            LyricsKind::Instrumental => None,
+            _ => None,
         };
 
         if let Some(lyrics) = lyrics {
@@ -184,7 +185,7 @@ mod tests {
 
     #[test]
     fn test_pick_text_synced_priority() {
-        let cfg = make_config(vec![LyricsKind::Synced, LyricsKind::Plain]);
+        let cfg = make_config(vec![LyricsKind::Lrc, LyricsKind::Plain]);
         let record = LrclibRecord {
             synced_lyrics: Some("[00:00.00] Hello".to_string()),
             plain_lyrics: Some("Hello".to_string()),
@@ -193,12 +194,12 @@ mod tests {
         };
 
         let result = pick_text(record, &cfg);
-        assert_eq!(result, Some(Lyrics::Synced("[00:00.00] Hello".to_string())));
+        assert_eq!(result, Some(Lyrics::Lrc("[00:00.00] Hello".to_string())));
     }
 
     #[test]
     fn test_pick_text_falls_back_to_plain() {
-        let cfg = make_config(vec![LyricsKind::Synced, LyricsKind::Plain]);
+        let cfg = make_config(vec![LyricsKind::Lrc, LyricsKind::Plain]);
         let record = LrclibRecord {
             synced_lyrics: None,
             plain_lyrics: Some("Hello".to_string()),
@@ -212,7 +213,7 @@ mod tests {
 
     #[test]
     fn test_pick_text_skips_empty_synced() {
-        let cfg = make_config(vec![LyricsKind::Synced, LyricsKind::Plain]);
+        let cfg = make_config(vec![LyricsKind::Lrc, LyricsKind::Plain]);
         let record = LrclibRecord {
             synced_lyrics: Some("   ".to_string()), // whitespace only
             plain_lyrics: Some("Hello".to_string()),
@@ -226,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_pick_text_instrumental() {
-        let cfg = make_config(vec![LyricsKind::Synced, LyricsKind::Plain]);
+        let cfg = make_config(vec![LyricsKind::Lrc, LyricsKind::Plain]);
         let record = LrclibRecord {
             synced_lyrics: None,
             plain_lyrics: None,
@@ -240,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_pick_text_no_lyrics_available() {
-        let cfg = make_config(vec![LyricsKind::Synced, LyricsKind::Plain]);
+        let cfg = make_config(vec![LyricsKind::Lrc, LyricsKind::Plain]);
         let record = LrclibRecord {
             synced_lyrics: None,
             plain_lyrics: None,

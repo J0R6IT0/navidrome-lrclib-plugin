@@ -57,7 +57,7 @@ impl NetEase {
 
 impl LyricsProvider for NetEase {
     fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
-        if !cfg.wants_synced() {
+        if !cfg.wants_lrc() {
             return Ok(None);
         }
 
@@ -135,10 +135,10 @@ fn fetch_lrc(song_id: u64, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> 
     };
 
     if lrc::is_synced(&text) {
-        if !cfg.wants_synced() {
+        if !cfg.wants_lrc() {
             return Ok(None);
         }
-        Ok(Some(Lyrics::Synced(text)))
+        Ok(Some(Lyrics::Lrc(text)))
     } else {
         if !cfg.wants_plain() {
             return Ok(None);

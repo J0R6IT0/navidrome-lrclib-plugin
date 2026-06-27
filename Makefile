@@ -1,7 +1,6 @@
 .PHONY: build bundle release clean
 
 TARGET = wasm32-wasip1
-CRATE_NAME = nd_lyrics
 
 build:
 	cargo build --release --target $(TARGET)

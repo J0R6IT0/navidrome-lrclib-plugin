@@ -8,7 +8,7 @@ A Navidrome plugin to fetch lyrics from multiple sources. Formerly Navidrome LRC
 ## Features
 
 - Support for multiple providers (see below).
-- Choose to fetch synced lyrics, plain or both, with configurable priority.
+- Choose which lyrics types to fetch (LRC, enhanced LRC, TTML, SRT, YAML lyrics file, plain), with configurable priority.
 - Sanitizes lyrics and optionally strips section labels ([Verse], [Chorus], etc.)
 - In-memory caching of lyrics for a configurable duration.
 - Option to write lyrics to files, next to tracks or in custom paths.
@@ -58,14 +58,14 @@ _lyrics/{type}/{track:album}/{track:track_number:2} - {track:title}
 This will be transfored into something like this:
 
 ```
-<selected_library_root>/_lyrics/synced/The Razors Edge/01 - Thunderstruck.lrc
+<selected_library_root>/_lyrics/lrc/The Razors Edge/01 - Thunderstruck.lrc
 ```
 
 Note that the extension is appended automatically based on the configuration and lyrics type.
 
 | Variable             | Description                                              |
 | -------------------- | -------------------------------------------------------- |
-| {type}               | The type of lyrics ("plain", "synced" or "instrumental") |
+| {type}               | The type of lyrics ("plain", "lrc", "elrc", "ttml", "srt", "lyricsfile" or "instrumental") |
 | {track:id}           | The ID of the track                                      |
 | {track:title}        | The title of the track                                   |
 | {track:album}        | The name of the album this track belongs to              |

@@ -68,7 +68,7 @@ impl Kugou {
 
 impl LyricsProvider for Kugou {
     fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
-        if !cfg.wants_synced() {
+        if !cfg.wants_lrc() {
             return Ok(None);
         }
 
@@ -104,7 +104,7 @@ impl LyricsProvider for Kugou {
         if lrc::is_instrumental(&lrc) {
             Ok(Some(Lyrics::Instrumental))
         } else {
-            Ok(Some(Lyrics::Synced(lrc)))
+            Ok(Some(Lyrics::Lrc(lrc)))
         }
     }
 }

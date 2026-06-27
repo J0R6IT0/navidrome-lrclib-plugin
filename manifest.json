@@ -23,35 +23,11 @@
     "schema": {
       "type": "object",
       "properties": {
-        "lyricsSynced": {
-          "type": "boolean",
-          "title": "Synced lyrics",
-          "default": true,
-          "description": "Fetch time-synced lyrics."
-        },
-
-        "lyricsPlain": {
-          "type": "boolean",
-          "title": "Plain lyrics",
-          "default": true,
-          "description": "Fetch plain (non-synced) lyrics."
-        },
-
-        "lyricsPriority": {
+        "lyricsFormats": {
           "type": "string",
-          "title": "Priority",
-          "description": "When both types are available, which one to return first.",
-          "default": "synced",
-          "oneOf": [
-            {
-              "const": "synced",
-              "title": "Prefer synced"
-            },
-            {
-              "const": "plain",
-              "title": "Prefer plain"
-            }
-          ]
+          "title": "Lyrics formats",
+          "default": "ttml,lyricsfile,elrc,lrc,srt,plain",
+          "description": "Comma-separated list of formats to fetch, ordered by priority. Remove a format to disable it (not recommended unless you have a specific use case). Valid values: lrc, elrc, ttml, srt, lyricsfile, plain."
         },
 
         "instrumentalText": {
@@ -115,18 +91,11 @@
           "description": "File extension for plain lyrics files."
         },
 
-        "syncedExtension": {
-          "type": "string",
-          "title": "Synced lyrics extension",
-          "default": "lrc",
-          "description": "File extension for synced lyrics files."
-        },
-
         "instrumentalExtension": {
           "type": "string",
           "title": "Instrumental lyrics extension",
           "default": "txt",
-          "description": "File extension for instrumental lyrics files."
+          "description": "File extension for instrumental lyrics files. LRC, ELRC, TTML, SRT and YAML files always use their standard extension."
         },
 
         "overwriteLyrics": {
@@ -174,45 +143,8 @@
           "label": "Lyrics",
           "elements": [
             {
-              "type": "Label",
-              "text": "Select the types of lyrics to fetch."
-            },
-            {
-              "type": "HorizontalLayout",
-              "elements": [
-                {
-                  "type": "Control",
-                  "scope": "#/properties/lyricsSynced"
-                },
-                {
-                  "type": "Control",
-                  "scope": "#/properties/lyricsPlain"
-                }
-              ]
-            },
-            {
               "type": "Control",
-              "scope": "#/properties/lyricsPriority",
-              "options": {
-                "format": "radio"
-              },
-              "rule": {
-                "effect": "SHOW",
-                "condition": {
-                  "scope": "#",
-                  "schema": {
-                    "properties": {
-                      "lyricsSynced": {
-                        "const": true
-                      },
-                      "lyricsPlain": {
-                        "const": true
-                      }
-                    },
-                    "required": ["lyricsSynced", "lyricsPlain"]
-                  }
-                }
-              }
+              "scope": "#/properties/lyricsFormats"
             },
             {
               "type": "Control",
@@ -312,10 +244,6 @@
                 {
                   "type": "Control",
                   "scope": "#/properties/plainExtension"
-                },
-                {
-                  "type": "Control",
-                  "scope": "#/properties/syncedExtension"
                 },
                 {
                   "type": "Control",

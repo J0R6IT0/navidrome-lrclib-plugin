@@ -1,15 +1,15 @@
 use crate::types::LyricsKind;
 use extism_pdk::warn;
 use nd_pdk::{host::config, lyrics::Error as LyricsError};
-use std::collections::HashSet;
+use std::{collections::HashSet, fmt};
 
 const DEFAULT_CACHE_TTL: i64 = 168;
 const DEFAULT_NEGATIVE_CACHE_TTL: i64 = 24;
 const MIN_CACHE_TTL: i64 = 1;
 
 const DEFAULT_PLAIN_EXTENSION: &str = "txt";
-const DEFAULT_SYNCED_EXTENSION: &str = "lrc";
 const DEFAULT_INSTRUMENTAL_EXTENSION: &str = "txt";
+
 const DEFAULT_INSTRUMENTAL_TEXT: &str = "Instrumental";
 const DEFAULT_FOLDER_TEMPLATE: &str = "_lyrics/{type}/{track:album_artist} - {track:album}/{track:disc_number:2} - {track:track_number:2} {track:title}";
 
@@ -28,8 +28,8 @@ impl ProviderEntry {
     }
 }
 
-impl std::fmt::Display for ProviderEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for ProviderEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.display_name())
     }
 }
@@ -39,7 +39,6 @@ pub struct PluginConfig {
     pub write_lyrics: bool,
     pub overwrite_lyrics: bool,
     pub plain_extension: String,
-    pub synced_extension: String,
     pub instrumental_extension: String,
     pub enable_cache: bool,
     pub cache_ttl_hours: i64,
@@ -60,7 +59,6 @@ impl Default for PluginConfig {
             write_lyrics: false,
             overwrite_lyrics: false,
             plain_extension: DEFAULT_PLAIN_EXTENSION.to_string(),
-            synced_extension: DEFAULT_SYNCED_EXTENSION.to_string(),
             instrumental_extension: DEFAULT_INSTRUMENTAL_EXTENSION.to_string(),
             enable_cache: true,
             cache_ttl_hours: DEFAULT_CACHE_TTL,
@@ -83,7 +81,6 @@ impl PluginConfig {
             write_lyrics: get_bool("writeLyrics", false)?,
             overwrite_lyrics: get_bool("overwriteLyrics", false)?,
             plain_extension: resolve_extension("plainExtension", DEFAULT_PLAIN_EXTENSION)?,
-            synced_extension: resolve_extension("syncedExtension", DEFAULT_SYNCED_EXTENSION)?,
             instrumental_extension: resolve_extension(
                 "instrumentalExtension",
                 DEFAULT_INSTRUMENTAL_EXTENSION,
@@ -109,39 +106,57 @@ impl PluginConfig {
         &self.lyrics_type_priority
     }
 
-    pub fn wants_synced(&self) -> bool {
-        self.lyrics_type_priority.contains(&LyricsKind::Synced)
+    pub fn wants(&self, kind: LyricsKind) -> bool {
+        self.lyrics_type_priority.contains(&kind)
+    }
+
+    pub fn wants_lrc(&self) -> bool {
+        self.wants(LyricsKind::Lrc)
     }
 
     pub fn wants_plain(&self) -> bool {
-        self.lyrics_type_priority.contains(&LyricsKind::Plain)
+        self.wants(LyricsKind::Plain)
+    }
+
+    pub fn extension_for(&self, kind: LyricsKind) -> &str {
+        match kind {
+            LyricsKind::Plain => self.plain_extension.as_str(),
+            LyricsKind::Instrumental => self.instrumental_extension.as_str(),
+            LyricsKind::Lrc => "lrc",
+            LyricsKind::Elrc => "elrc",
+            LyricsKind::Ttml => "ttml",
+            LyricsKind::Srt => "srt",
+            LyricsKind::Lyricsfile => "yml",
+        }
     }
 }
 
 fn resolve_lyrics_type_priority() -> Result<Vec<LyricsKind>, LyricsError> {
-    let want_synced = get_bool("lyricsSynced", true)?;
-    let want_plain = get_bool("lyricsPlain", true)?;
-    let prefers_synced_first = get_string("lyricsPriority")?.as_deref() != Some("plain");
+    let order = match get_string("lyricsFormats")? {
+        Some(raw) => parse_lyrics_formats(&raw),
+        None => Vec::new(),
+    };
 
-    let mut priority = Vec::new();
-
-    if want_synced {
-        priority.push(LyricsKind::Synced);
-    }
-    if want_plain {
-        priority.push(LyricsKind::Plain);
+    if order.is_empty() {
+        warn!("no lyrics formats enabled, defaulting to lrc + plain");
+        return Ok(vec![LyricsKind::Lrc, LyricsKind::Plain]);
     }
 
-    if priority.is_empty() {
-        warn!("no lyrics types selected, defaulting to synced + plain");
-        priority = vec![LyricsKind::Synced, LyricsKind::Plain];
+    Ok(order)
+}
+
+fn parse_lyrics_formats(raw: &str) -> Vec<LyricsKind> {
+    let mut order: Vec<LyricsKind> = Vec::new();
+    for slug in raw.split(',') {
+        if let Some(kind) = LyricsKind::from_slug(slug)
+            && kind != LyricsKind::Instrumental
+            && !order.contains(&kind)
+        {
+            order.push(kind);
+        }
     }
 
-    if priority.len() == 2 && !prefers_synced_first {
-        priority.reverse();
-    }
-
-    Ok(priority)
+    order
 }
 
 fn resolve_extension(key: &str, default_value: &str) -> Result<String, LyricsError> {
@@ -269,6 +284,47 @@ mod tests {
             name: name.to_string(),
             param: param.map(|s| s.to_string()),
         }
+    }
+
+    #[test]
+    fn test_parse_lyrics_formats_ordered() {
+        assert_eq!(
+            parse_lyrics_formats("ttml,lyricsfile,elrc,lrc,srt,plain"),
+            vec![
+                LyricsKind::Ttml,
+                LyricsKind::Lyricsfile,
+                LyricsKind::Elrc,
+                LyricsKind::Lrc,
+                LyricsKind::Srt,
+                LyricsKind::Plain,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_lyrics_formats_whitespace_and_case() {
+        assert_eq!(
+            parse_lyrics_formats(" LRC , Plain "),
+            vec![LyricsKind::Lrc, LyricsKind::Plain]
+        );
+    }
+
+    #[test]
+    fn test_parse_lyrics_formats_dedup_and_skips_unknown() {
+        assert_eq!(parse_lyrics_formats("lrc,bogus,lrc"), vec![LyricsKind::Lrc]);
+    }
+
+    #[test]
+    fn test_parse_lyrics_formats_excludes_instrumental() {
+        assert_eq!(
+            parse_lyrics_formats("instrumental,plain"),
+            vec![LyricsKind::Plain]
+        );
+    }
+
+    #[test]
+    fn test_parse_lyrics_formats_empty() {
+        assert_eq!(parse_lyrics_formats(""), Vec::<LyricsKind>::new());
     }
 
     #[test]
