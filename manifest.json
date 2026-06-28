@@ -60,7 +60,8 @@
                   { "const": "kugou", "title": "KuGou" },
                   { "const": "netease", "title": "NetEase" },
                   { "const": "qqmusic", "title": "QQ Music" },
-                  { "const": "applemusic", "title": "Apple Music" }
+                  { "const": "applemusic", "title": "Apple Music" },
+                  { "const": "stixoi", "title": "stixoi.info" }
                 ]
               },
               "baseUrl": {

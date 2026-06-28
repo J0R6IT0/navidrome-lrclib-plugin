@@ -2,7 +2,7 @@ use crate::{
     config::PluginConfig,
     providers::{
         applemusic::AppleMusic, kugou::Kugou, lrclib::Lrclib, lyricsovh::LyricsOvh,
-        netease::NetEase, qqmusic::QQMusic,
+        netease::NetEase, qqmusic::QQMusic, stixoi::Stixoi,
     },
     registry::ProviderRegistry,
     types::{Lyrics, LyricsKind},
@@ -15,6 +15,7 @@ mod lrclib;
 mod lyricsovh;
 mod netease;
 mod qqmusic;
+mod stixoi;
 
 const USER_AGENT: &str = concat!(
     "navidrome-lyrics-plugin/",
@@ -32,6 +33,7 @@ pub fn register_providers(registry: &mut ProviderRegistry) {
     registry.register("netease", NetEase::create);
     registry.register("qqmusic", QQMusic::create);
     registry.register("applemusic", AppleMusic::create);
+    registry.register("stixoi", Stixoi::create);
 }
 
 pub trait LyricsProvider {

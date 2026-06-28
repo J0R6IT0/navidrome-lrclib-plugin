@@ -31,12 +31,13 @@ At this time, the following providers are available. Please report any issues yo
 
 | Provider    | Type                 | Parameters                   | Notes                           |
 | ----------- | -------------------- | ---------------------------- | ------------------------------- |
-| LRCLIB      | plain,lrc,lyricsfile | Base URL                     |                                 |
-| lyrics.ovh  | plain                | Base URL                     |                                 |
+| LRCLIB      | plain,lrc,lyricsfile | Custom base URL              |                                 |
+| lyrics.ovh  | plain                | Custom base URL              |                                 |
 | KuGou       | lrc,elrc             |                              |                                 |
 | NetEase     | lrc,elrc             |                              |                                 |
 | QQ Music    | lrc,elrc             |                              |                                 |
 | Apple Music | ttml                 | Media user token, Storefront | Requires an active subscription |
+| stixoi.info | plain                |                              | Greek lyrics archive            |
 
 ## Path variables
 
