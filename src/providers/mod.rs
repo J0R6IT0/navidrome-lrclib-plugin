@@ -1,6 +1,8 @@
 use crate::{
     config::PluginConfig,
-    providers::{kugou::Kugou, lrclib::Lrclib, lyricsovh::LyricsOvh, netease::NetEase},
+    providers::{
+        kugou::Kugou, lrclib::Lrclib, lyricsovh::LyricsOvh, netease::NetEase, qqmusic::QQMusic,
+    },
     registry::ProviderRegistry,
     types::{Lyrics, LyricsKind},
 };
@@ -10,6 +12,7 @@ mod kugou;
 mod lrclib;
 mod lyricsovh;
 mod netease;
+mod qqmusic;
 
 const USER_AGENT: &str = concat!(
     "navidrome-lyrics-plugin/",
@@ -25,6 +28,7 @@ pub fn register_providers(registry: &mut ProviderRegistry) {
     registry.register("lyrics.ovh", LyricsOvh::create);
     registry.register("kugou", Kugou::create);
     registry.register("netease", NetEase::create);
+    registry.register("qqmusic", QQMusic::create);
 }
 
 pub trait LyricsProvider {

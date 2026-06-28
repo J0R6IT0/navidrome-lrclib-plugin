@@ -35,7 +35,11 @@ impl LyricsProvider for LyricsOvh {
         &[LyricsKind::Plain]
     }
 
-    fn fetch_lyrics(&self, track: &TrackInfo, _cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
+    fn fetch_lyrics(
+        &self,
+        track: &TrackInfo,
+        _cfg: &PluginConfig,
+    ) -> Result<Option<Lyrics>, Error> {
         let first_artist = track
             .artists
             .first()

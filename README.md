@@ -35,6 +35,7 @@ At this time, the following providers are available. Please report any issues yo
 | lyrics.ovh | plain                | Base URL          |
 | kugou      | lrc,elrc             |                   |
 | netease    | lrc,elrc             |                   |
+| qqmusic    | lrc,elrc             |                   |
 
 ## Path variables
 
