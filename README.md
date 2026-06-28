@@ -29,13 +29,14 @@ directly when available. This will only work if "Write to custom path" is disabl
 
 At this time, the following providers are available. Please report any issues you encounter while using them.
 
-| Provider   | Type                 | Custom parameters |
-| ---------- | -------------------- | ----------------- |
-| lrclib     | plain,lrc,lyricsfile | Base URL          |
-| lyrics.ovh | plain                | Base URL          |
-| kugou      | lrc,elrc             |                   |
-| netease    | lrc,elrc             |                   |
-| qqmusic    | lrc,elrc             |                   |
+| Provider    | Type                 | Parameters                   | Notes                           |
+| ----------- | -------------------- | ---------------------------- | ------------------------------- |
+| LRCLIB      | plain,lrc,lyricsfile | Base URL                     |                                 |
+| lyrics.ovh  | plain                | Base URL                     |                                 |
+| KuGou       | lrc,elrc             |                              |                                 |
+| NetEase     | lrc,elrc             |                              |                                 |
+| QQ Music    | lrc,elrc             |                              |                                 |
+| Apple Music | ttml                 | Media user token, Storefront | Requires an active subscription |
 
 ## Path variables
 

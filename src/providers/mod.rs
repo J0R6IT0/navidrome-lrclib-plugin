@@ -1,13 +1,15 @@
 use crate::{
     config::PluginConfig,
     providers::{
-        kugou::Kugou, lrclib::Lrclib, lyricsovh::LyricsOvh, netease::NetEase, qqmusic::QQMusic,
+        applemusic::AppleMusic, kugou::Kugou, lrclib::Lrclib, lyricsovh::LyricsOvh,
+        netease::NetEase, qqmusic::QQMusic,
     },
     registry::ProviderRegistry,
     types::{Lyrics, LyricsKind},
 };
 use nd_pdk::lyrics::{Error, TrackInfo};
 
+mod applemusic;
 mod kugou;
 mod lrclib;
 mod lyricsovh;
@@ -29,6 +31,7 @@ pub fn register_providers(registry: &mut ProviderRegistry) {
     registry.register("kugou", Kugou::create);
     registry.register("netease", NetEase::create);
     registry.register("qqmusic", QQMusic::create);
+    registry.register("applemusic", AppleMusic::create);
 }
 
 pub trait LyricsProvider {

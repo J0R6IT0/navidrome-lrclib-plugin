@@ -1,5 +1,5 @@
 use crate::{
-    config::PluginConfig,
+    config::{PluginConfig, ProviderParams},
     providers::{LyricsProvider, USER_AGENT},
     types::{Lyrics, LyricsKind},
 };
@@ -37,9 +37,9 @@ pub struct Lrclib {
 }
 
 impl Lrclib {
-    pub fn create(param: Option<&str>) -> Box<dyn LyricsProvider> {
+    pub fn create(params: &ProviderParams) -> Box<dyn LyricsProvider> {
         Box::new(Self {
-            base_url: param.unwrap_or(DEFAULT_BASE_URL).to_string(),
+            base_url: params.get("baseUrl").unwrap_or(DEFAULT_BASE_URL).to_string(),
         })
     }
 }

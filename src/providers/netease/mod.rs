@@ -1,5 +1,5 @@
 use crate::{
-    config::PluginConfig,
+    config::{PluginConfig, ProviderParams},
     format::lrc,
     providers::{BROWSER_USER_AGENT, LyricsProvider},
     types::{Lyrics, LyricsKind},
@@ -63,7 +63,7 @@ impl LyricContent {
 pub struct NetEase;
 
 impl NetEase {
-    pub fn create(_param: Option<&str>) -> Box<dyn LyricsProvider> {
+    pub fn create(_params: &ProviderParams) -> Box<dyn LyricsProvider> {
         Box::new(Self)
     }
 }

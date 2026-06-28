@@ -1,5 +1,5 @@
 use crate::{
-    config::PluginConfig,
+    config::{PluginConfig, ProviderParams},
     format::lrc,
     providers::{BROWSER_USER_AGENT, LyricsProvider},
     types::{Lyrics, LyricsKind},
@@ -66,7 +66,7 @@ struct DownloadResponse {
 pub struct Kugou;
 
 impl Kugou {
-    pub fn create(_param: Option<&str>) -> Box<dyn LyricsProvider> {
+    pub fn create(_params: &ProviderParams) -> Box<dyn LyricsProvider> {
         Box::new(Self)
     }
 }

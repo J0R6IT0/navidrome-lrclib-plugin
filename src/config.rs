@@ -1,8 +1,11 @@
 use crate::types::LyricsKind;
 use extism_pdk::warn;
 use nd_pdk::{host::config, lyrics::Error as LyricsError};
-use serde::Deserialize;
-use std::{collections::HashSet, fmt};
+use serde_json::Value;
+use std::{
+    collections::{BTreeMap, HashSet},
+    fmt,
+};
 
 const DEFAULT_CACHE_TTL: i64 = 168;
 const DEFAULT_NEGATIVE_CACHE_TTL: i64 = 24;
@@ -14,18 +17,43 @@ const DEFAULT_INSTRUMENTAL_EXTENSION: &str = "txt";
 const DEFAULT_INSTRUMENTAL_TEXT: &str = "Instrumental";
 const DEFAULT_FOLDER_TEMPLATE: &str = "_lyrics/{type}/{track:album_artist} - {track:album}/{track:disc_number:2} - {track:track_number:2} {track:title}";
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct ProviderParams(BTreeMap<String, String>);
+
+impl ProviderParams {
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).map(String::as_str)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProviderEntry {
     pub name: String,
-    pub param: Option<String>,
+    pub params: ProviderParams,
 }
 
 impl ProviderEntry {
     pub fn display_name(&self) -> String {
-        match &self.param {
-            Some(p) => format!("{}({})", self.name, p),
-            None => self.name.clone(),
+        if self.params.is_empty() {
+            return self.name.clone();
         }
+
+        let joined = self
+            .params
+            .0
+            .iter()
+            .map(|(k, v)| {
+                let v = if is_sensitive_key(k) { "***" } else { v };
+                format!("{k}={v}")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        format!("{}({joined})", self.name)
     }
 }
 
@@ -203,33 +231,37 @@ fn resolve_providers() -> Result<Vec<ProviderEntry>, LyricsError> {
     Ok(providers)
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ProviderRow {
-    #[serde(default)]
-    provider: String,
-    #[serde(default)]
-    base_url: String,
-}
-
 fn parse_providers(raw: &str) -> Vec<ProviderEntry> {
-    let rows: Vec<ProviderRow> = serde_json::from_str(raw).unwrap_or_default();
+    let rows: Vec<BTreeMap<String, Value>> = serde_json::from_str(raw).unwrap_or_default();
 
     let mut seen = HashSet::new();
     rows.into_iter()
-        .filter_map(|row| {
-            let name = row.provider.trim();
-            if name.is_empty() {
-                return None;
-            }
-            let param = row.base_url.trim();
-            Some(ProviderEntry {
-                name: name.to_string(),
-                param: (!param.is_empty()).then(|| param.to_string()),
-            })
-        })
+        .filter_map(parse_provider_row)
         .filter(|entry| seen.insert(entry.clone()))
         .collect()
+}
+
+fn parse_provider_row(mut row: BTreeMap<String, Value>) -> Option<ProviderEntry> {
+    let name = row
+        .remove("provider")
+        .as_ref()
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?
+        .to_string();
+
+    let params = row
+        .into_iter()
+        .filter_map(|(key, value)| {
+            let value = value.as_str()?.trim();
+            (!value.is_empty()).then(|| (key, value.to_string()))
+        })
+        .collect();
+
+    Some(ProviderEntry {
+        name,
+        params: ProviderParams(params),
+    })
 }
 
 fn normalize_extension(ext: &str) -> String {
@@ -258,14 +290,26 @@ fn get_optional_i32(key: &str) -> Result<Option<i32>, LyricsError> {
         .map(|v| v.and_then(|s| s.parse().ok()))
 }
 
+fn is_sensitive_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    ["token", "secret", "password", "cookie", "auth"]
+        .iter()
+        .any(|needle| key.contains(needle))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn entry(name: &str, param: Option<&str>) -> ProviderEntry {
+    fn entry(name: &str, params: &[(&str, &str)]) -> ProviderEntry {
         ProviderEntry {
             name: name.to_string(),
-            param: param.map(|s| s.to_string()),
+            params: ProviderParams(
+                params
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            ),
         }
     }
 
@@ -321,13 +365,25 @@ mod tests {
 
     #[test]
     fn test_display_name_with_param() {
-        let e = entry("lrclib", Some("http://localhost:7592"));
-        assert_eq!(e.display_name(), "lrclib(http://localhost:7592)");
+        let e = entry("lrclib", &[("baseUrl", "http://localhost:7592")]);
+        assert_eq!(e.display_name(), "lrclib(baseUrl=http://localhost:7592)");
+    }
+
+    #[test]
+    fn test_display_name_redacts_sensitive_params() {
+        let e = entry(
+            "applemusic",
+            &[("mediaUserToken", "abc"), ("storefront", "gb")],
+        );
+        assert_eq!(
+            e.display_name(),
+            "applemusic(mediaUserToken=***, storefront=gb)"
+        );
     }
 
     #[test]
     fn test_display_name_without_param() {
-        let e = entry("lrclib", None);
+        let e = entry("lrclib", &[]);
         assert_eq!(e.display_name(), "lrclib");
     }
 
@@ -335,7 +391,7 @@ mod tests {
     fn test_parse_providers_json_basic() {
         assert_eq!(
             parse_providers(r#"[{"provider":"lrclib"},{"provider":"lyrics.ovh"}]"#),
-            vec![entry("lrclib", None), entry("lyrics.ovh", None)]
+            vec![entry("lrclib", &[]), entry("lyrics.ovh", &[])]
         );
     }
 
@@ -343,7 +399,7 @@ mod tests {
     fn test_parse_providers_json_with_base_url() {
         assert_eq!(
             parse_providers(r#"[{"provider":"lrclib","baseUrl":"http://localhost:7592"}]"#),
-            vec![entry("lrclib", Some("http://localhost:7592"))]
+            vec![entry("lrclib", &[("baseUrl", "http://localhost:7592")])]
         );
     }
 
@@ -351,7 +407,20 @@ mod tests {
     fn test_parse_providers_json_blank_base_url_is_none() {
         assert_eq!(
             parse_providers(r#"[{"provider":"lrclib","baseUrl":"   "}]"#),
-            vec![entry("lrclib", None)]
+            vec![entry("lrclib", &[])]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_json_named_params() {
+        assert_eq!(
+            parse_providers(
+                r#"[{"provider":"applemusic","mediaUserToken":" abc ","storefront":"gb","baseUrl":""}]"#
+            ),
+            vec![entry(
+                "applemusic",
+                &[("mediaUserToken", "abc"), ("storefront", "gb")]
+            )]
         );
     }
 
@@ -361,7 +430,7 @@ mod tests {
             parse_providers(
                 r#"[{"provider":""},{"provider":"kugou"},{"provider":"kugou"},{"provider":"netease"}]"#
             ),
-            vec![entry("kugou", None), entry("netease", None)]
+            vec![entry("kugou", &[]), entry("netease", &[])]
         );
     }
 
