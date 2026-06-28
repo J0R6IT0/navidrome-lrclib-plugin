@@ -30,6 +30,23 @@ impl ProviderParams {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProviderMode {
+    #[default]
+    Priority,
+    Rotation,
+}
+
+impl ProviderMode {
+    pub fn from_slug(slug: &str) -> Option<ProviderMode> {
+        match slug.trim().to_ascii_lowercase().as_str() {
+            "priority" => Some(ProviderMode::Priority),
+            "rotation" => Some(ProviderMode::Rotation),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProviderEntry {
     pub name: String,
@@ -74,6 +91,7 @@ pub struct PluginConfig {
     pub negative_cache: bool,
     pub negative_cache_ttl_hours: i64,
     pub providers: Vec<ProviderEntry>,
+    pub provider_mode: ProviderMode,
     pub write_to_specific_folder: bool,
     pub write_to_specific_folder_library_id: Option<i32>,
     pub write_to_specific_folder_template: String,
@@ -94,6 +112,7 @@ impl Default for PluginConfig {
             negative_cache: true,
             negative_cache_ttl_hours: DEFAULT_NEGATIVE_CACHE_TTL,
             providers: vec![],
+            provider_mode: ProviderMode::default(),
             write_to_specific_folder: false,
             write_to_specific_folder_library_id: None,
             write_to_specific_folder_template: DEFAULT_FOLDER_TEMPLATE.to_string(),
@@ -119,6 +138,7 @@ impl PluginConfig {
             negative_cache: get_bool("negativeCache", true)?,
             negative_cache_ttl_hours: resolve_negative_cache_ttl()?,
             providers: resolve_providers()?,
+            provider_mode: resolve_provider_mode()?,
             write_to_specific_folder: get_bool("writeToSpecificFolder", false)?,
             write_to_specific_folder_library_id: get_optional_i32(
                 "writeToSpecificFolderLibraryId",
@@ -231,6 +251,15 @@ fn resolve_providers() -> Result<Vec<ProviderEntry>, LyricsError> {
     Ok(providers)
 }
 
+fn resolve_provider_mode() -> Result<ProviderMode, LyricsError> {
+    let mode = get_string("providerMode")?.and_then(|s| ProviderMode::from_slug(&s));
+
+    match mode {
+        Some(mode) => Ok(mode),
+        None => Ok(ProviderMode::default()),
+    }
+}
+
 fn parse_providers(raw: &str) -> Vec<ProviderEntry> {
     let rows: Vec<BTreeMap<String, Value>> = serde_json::from_str(raw).unwrap_or_default();
 
@@ -311,6 +340,24 @@ mod tests {
                     .collect(),
             ),
         }
+    }
+
+    #[test]
+    fn test_provider_mode_from_slug() {
+        assert_eq!(
+            ProviderMode::from_slug("priority"),
+            Some(ProviderMode::Priority)
+        );
+        assert_eq!(
+            ProviderMode::from_slug(" Rotation "),
+            Some(ProviderMode::Rotation)
+        );
+        assert_eq!(ProviderMode::from_slug("foo"), None);
+    }
+
+    #[test]
+    fn test_provider_mode_default_is_priority() {
+        assert_eq!(ProviderMode::default(), ProviderMode::Priority);
     }
 
     #[test]

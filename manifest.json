@@ -93,6 +93,16 @@
           }
         },
 
+        "providerMode": {
+          "type": "string",
+          "title": "Provider mode",
+          "default": "priority",
+          "oneOf": [
+            { "const": "priority", "title": "Priority" },
+            { "const": "rotation", "title": "Rotation" }
+          ]
+        },
+
         "enableCache": {
           "type": "boolean",
           "title": "Enable lyrics cache",
@@ -167,6 +177,7 @@
           "description": "Path relative to the selected library root. Supports template variables. See GitHub for the full list."
         }
       },
+      "required": ["providerMode"],
       "if": {
         "properties": {
           "writeToSpecificFolder": { "const": true }
@@ -206,7 +217,19 @@
           "elements": [
             {
               "type": "Label",
-              "text": "The list of providers to query, ordered by priority. The same provider can be included multiple times with different parameters (for example, lrclib with a custom base URL and with the default)."
+              "text": "The list of providers to query. The same provider can be included multiple times with different parameters (for example, lrclib with a custom base URL and with the default). The provider mode below controls how the list is used for each lookup."
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/providerMode"
+            },
+            {
+              "type": "Label",
+              "text": "• Priority: every lookup tries the providers top to bottom and the first one that returns lyrics wins."
+            },
+            {
+              "type": "Label",
+              "text": "• Rotation: each lookup starts with the next provider in the list, cycling through them on successive calls. If the chosen provider returns nothing, the rest are tried as fallbacks. Useful to avoid rate limits."
             },
             {
               "type": "Control",
