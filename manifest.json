@@ -23,35 +23,11 @@
     "schema": {
       "type": "object",
       "properties": {
-        "lyricsSynced": {
-          "type": "boolean",
-          "title": "Synced lyrics",
-          "default": true,
-          "description": "Fetch time-synced lyrics."
-        },
-
-        "lyricsPlain": {
-          "type": "boolean",
-          "title": "Plain lyrics",
-          "default": true,
-          "description": "Fetch plain (non-synced) lyrics."
-        },
-
-        "lyricsPriority": {
+        "lyricsFormats": {
           "type": "string",
-          "title": "Priority",
-          "description": "When both types are available, which one to return first.",
-          "default": "synced",
-          "oneOf": [
-            {
-              "const": "synced",
-              "title": "Prefer synced"
-            },
-            {
-              "const": "plain",
-              "title": "Prefer plain"
-            }
-          ]
+          "title": "Lyrics formats",
+          "default": "ttml,lyricsfile,elrc,lrc,srt,plain",
+          "description": "Comma-separated list of formats to fetch, ordered by priority. Remove a format to disable it (not recommended unless you have a specific use case). Valid values: lrc, elrc, ttml, srt, lyricsfile, plain."
         },
 
         "instrumentalText": {
@@ -67,11 +43,129 @@
           "default": false
         },
 
-        "providers": {
-          "type": "string",
+        "providersList": {
+          "type": "array",
           "title": "Lyrics providers",
-          "default": "lrclib,lyrics.ovh",
-          "description": "Comma-separated list of providers to use, ordered by priority. See the GitHub page for available providers."
+          "default": [{ "provider": "lrclib" }, { "provider": "lyrics.ovh" }],
+          "items": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "title": "Provider",
+                "default": "lrclib",
+                "oneOf": [
+                  { "const": "lrclib", "title": "LRCLIB" },
+                  { "const": "lyrics.ovh", "title": "lyrics.ovh" },
+                  { "const": "kugou", "title": "KuGou" },
+                  { "const": "netease", "title": "NetEase" },
+                  { "const": "qqmusic", "title": "QQ Music" },
+                  { "const": "applemusic", "title": "Apple Music" },
+                  { "const": "stixoi", "title": "stixoi.info" }
+                ]
+              },
+              "baseUrl": {
+                "type": "string",
+                "title": "Custom base URL",
+                "description": "Optional. Leave empty to use the provider's default."
+              },
+              "mediaUserToken": {
+                "type": "string",
+                "title": "Media user token",
+                "description": "The media-user-token of an Apple Music subscriber, required to access lyrics."
+              },
+              "storefront": {
+                "type": "string",
+                "title": "Storefront",
+                "description": "Optional. Storefront code (e.g. us, gb, es). Auto-detected from the account when left empty. Only include it if the auto-detection is not working correctly."
+              },
+              "includeTranslations": {
+                "type": "boolean",
+                "title": "Include translations (availability varies by song)",
+                "default": false
+              },
+              "translationLanguage": {
+                "type": "string",
+                "title": "Translation language",
+                "default": "en-US",
+                "oneOf": [
+                  { "const": "ar", "title": "Arabic" },
+                  { "const": "ca", "title": "Catalan" },
+                  { "const": "zh-Hans-CN", "title": "Chinese (Simplified)" },
+                  {
+                    "const": "zh-Hant-HK",
+                    "title": "Chinese (Traditional, Hong Kong)"
+                  },
+                  {
+                    "const": "zh-Hant-TW",
+                    "title": "Chinese (Traditional, Taiwan)"
+                  },
+                  { "const": "hr", "title": "Croatian" },
+                  { "const": "cs", "title": "Czech" },
+                  { "const": "da", "title": "Danish" },
+                  { "const": "nl", "title": "Dutch" },
+                  { "const": "en-AU", "title": "English (Australia)" },
+                  { "const": "en-CA", "title": "English (Canada)" },
+                  { "const": "en-GB", "title": "English (UK)" },
+                  { "const": "en-US", "title": "English (US)" },
+                  { "const": "fi", "title": "Finnish" },
+                  { "const": "fr-FR", "title": "French" },
+                  { "const": "fr-CA", "title": "French (Canada)" },
+                  { "const": "de-DE", "title": "German" },
+                  { "const": "de-CH", "title": "German (Switzerland)" },
+                  { "const": "el", "title": "Greek" },
+                  { "const": "he", "title": "Hebrew" },
+                  { "const": "hi", "title": "Hindi" },
+                  { "const": "hu", "title": "Hungarian" },
+                  { "const": "id", "title": "Indonesian" },
+                  { "const": "it", "title": "Italian" },
+                  { "const": "ja", "title": "Japanese" },
+                  { "const": "ko", "title": "Korean" },
+                  { "const": "ms", "title": "Malay" },
+                  { "const": "nb", "title": "Norwegian Bokmål" },
+                  { "const": "pl", "title": "Polish" },
+                  { "const": "pt-BR", "title": "Portuguese (Brazil)" },
+                  { "const": "pt-PT", "title": "Portuguese (Portugal)" },
+                  { "const": "ro", "title": "Romanian" },
+                  { "const": "ru", "title": "Russian" },
+                  { "const": "sk", "title": "Slovak" },
+                  { "const": "es-MX", "title": "Spanish (Mexico)" },
+                  { "const": "es-ES", "title": "Spanish (Spain)" },
+                  { "const": "sv", "title": "Swedish" },
+                  { "const": "th", "title": "Thai" },
+                  { "const": "tr", "title": "Turkish" },
+                  { "const": "uk", "title": "Ukrainian" },
+                  { "const": "vi", "title": "Vietnamese" }
+                ],
+                "description": "Language the translation should be in. Only used when translations are included."
+              },
+              "includeRomanization": {
+                "type": "boolean",
+                "title": "Include romanization (availability varies by song)",
+                "default": false
+              }
+            },
+            "required": ["provider"],
+            "allOf": [
+              {
+                "if": {
+                  "properties": { "provider": { "const": "applemusic" } },
+                  "required": ["provider"]
+                },
+                "then": { "required": ["mediaUserToken"] }
+              }
+            ]
+          }
+        },
+
+        "providerMode": {
+          "type": "string",
+          "title": "Provider mode",
+          "default": "priority",
+          "oneOf": [
+            { "const": "priority", "title": "Priority" },
+            { "const": "rotation", "title": "Rotation" }
+          ]
         },
 
         "enableCache": {
@@ -112,14 +206,7 @@
           "type": "string",
           "title": "Plain lyrics extension",
           "default": "txt",
-          "description": "File extension for plain lyrics files."
-        },
-
-        "syncedExtension": {
-          "type": "string",
-          "title": "Synced lyrics extension",
-          "default": "lrc",
-          "description": "File extension for synced lyrics files."
+          "description": "File extension for plain lyrics files. LRC, ELRC, TTML, SRT and YAML files always use their standard extension."
         },
 
         "instrumentalExtension": {
@@ -155,6 +242,7 @@
           "description": "Path relative to the selected library root. Supports template variables. See GitHub for the full list."
         }
       },
+      "required": ["providerMode"],
       "if": {
         "properties": {
           "writeToSpecificFolder": { "const": true }
@@ -174,45 +262,8 @@
           "label": "Lyrics",
           "elements": [
             {
-              "type": "Label",
-              "text": "Select the types of lyrics to fetch."
-            },
-            {
-              "type": "HorizontalLayout",
-              "elements": [
-                {
-                  "type": "Control",
-                  "scope": "#/properties/lyricsSynced"
-                },
-                {
-                  "type": "Control",
-                  "scope": "#/properties/lyricsPlain"
-                }
-              ]
-            },
-            {
               "type": "Control",
-              "scope": "#/properties/lyricsPriority",
-              "options": {
-                "format": "radio"
-              },
-              "rule": {
-                "effect": "SHOW",
-                "condition": {
-                  "scope": "#",
-                  "schema": {
-                    "properties": {
-                      "lyricsSynced": {
-                        "const": true
-                      },
-                      "lyricsPlain": {
-                        "const": true
-                      }
-                    },
-                    "required": ["lyricsSynced", "lyricsPlain"]
-                  }
-                }
-              }
+              "scope": "#/properties/lyricsFormats"
             },
             {
               "type": "Control",
@@ -230,8 +281,115 @@
           "label": "Providers",
           "elements": [
             {
+              "type": "Label",
+              "text": "The list of providers to query. The same provider can be included multiple times with different parameters (for example, lrclib with a custom base URL and with the default). The provider mode below controls how the list is used for each lookup."
+            },
+            {
               "type": "Control",
-              "scope": "#/properties/providers"
+              "scope": "#/properties/providerMode"
+            },
+            {
+              "type": "Label",
+              "text": "• Priority: every lookup tries the providers top to bottom and the first one that returns lyrics wins."
+            },
+            {
+              "type": "Label",
+              "text": "• Rotation: each lookup starts with the next provider in the list, cycling through them on successive calls. If the chosen provider returns nothing, the rest are tried as fallbacks. Useful to avoid rate limits."
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/providersList",
+              "options": {
+                "showSortButtons": true,
+                "elementLabelProp": "provider",
+                "detail": {
+                  "type": "VerticalLayout",
+                  "elements": [
+                    {
+                      "type": "Control",
+                      "scope": "#/properties/provider"
+                    },
+                    {
+                      "type": "Control",
+                      "scope": "#/properties/baseUrl",
+                      "rule": {
+                        "effect": "SHOW",
+                        "condition": {
+                          "scope": "#/properties/provider",
+                          "schema": {
+                            "enum": ["lrclib", "lyrics.ovh"]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "Control",
+                      "scope": "#/properties/mediaUserToken",
+                      "rule": {
+                        "effect": "SHOW",
+                        "condition": {
+                          "scope": "#/properties/provider",
+                          "schema": {
+                            "const": "applemusic"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "Control",
+                      "scope": "#/properties/storefront",
+                      "rule": {
+                        "effect": "SHOW",
+                        "condition": {
+                          "scope": "#/properties/provider",
+                          "schema": {
+                            "const": "applemusic"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "Control",
+                      "scope": "#/properties/includeRomanization",
+                      "rule": {
+                        "effect": "SHOW",
+                        "condition": {
+                          "scope": "#/properties/provider",
+                          "schema": {
+                            "const": "applemusic"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "Control",
+                      "scope": "#/properties/includeTranslations",
+                      "rule": {
+                        "effect": "SHOW",
+                        "condition": {
+                          "scope": "#/properties/provider",
+                          "schema": {
+                            "const": "applemusic"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "Control",
+                      "scope": "#/properties/translationLanguage",
+                      "rule": {
+                        "effect": "SHOW",
+                        "condition": {
+                          "scope": "#/properties/includeTranslations",
+                          "schema": {
+                            "const": true
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
             }
           ]
         },
@@ -312,10 +470,6 @@
                 {
                   "type": "Control",
                   "scope": "#/properties/plainExtension"
-                },
-                {
-                  "type": "Control",
-                  "scope": "#/properties/syncedExtension"
                 },
                 {
                   "type": "Control",

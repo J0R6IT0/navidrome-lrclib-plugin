@@ -4,26 +4,64 @@ pub mod lrc;
 
 pub fn strip_section_labels(lyrics: &str) -> String {
     let re = Regex::new(
-        r"(?i)\[(?:verse|pre[- ]?verse|chorus|pre[- ]?chorus|post[- ]?chorus|bridge|hook|refrain|intro|outro|coda|interlude|instrumental|breakdown|solo|drop|chant|skit|ad-?lib|overture|finale|couplet)\b[^\]]*\]"
+        r"(?i)\[(?:verse|pre[- ]?verse|chorus|pre[- ]?chorus|post[- ]?chorus|bridge|hook|refrain|intro|outro|coda|interlude|instrumental|breakdown|solo|drop|chant|skit|ad-?lib|overture|finale|couplet|coro|pre[- ]?coro|post[- ]?coro|verso|puente|refrán|interludio)\b[^\]]*\]"
     )
     .unwrap();
 
-    lyrics
-        .lines()
-        .map(|line| {
-            let stripped = re.replace_all(line, "").to_string();
+    let mut out: Vec<String> = Vec::new();
 
-            let cleaned = stripped.replace("  ", " ");
+    let mut pending: Vec<String> = Vec::new();
+    let mut run_has_label = false;
 
-            if line.trim_start().starts_with('[') {
-                cleaned.trim().to_string()
-            } else {
-                cleaned.trim_end().to_string()
+    for line in lyrics.lines() {
+        let stripped = re.replace_all(line, "");
+        let cleaned = stripped.replace("  ", " ");
+
+        let cleaned = if line.trim_start().starts_with('[') {
+            cleaned.trim().to_string()
+        } else {
+            cleaned.trim_end().to_string()
+        };
+
+        if cleaned.trim().is_empty() {
+            continue;
+        }
+
+        if lrc::is_blank_timed_line(&cleaned) {
+            run_has_label |= !lrc::is_blank_timed_line(line);
+            pending.push(cleaned);
+            continue;
+        }
+
+        if run_has_label {
+            if gap_warrants_blank(&pending, &cleaned) {
+                out.push(pending.remove(0));
             }
-        })
-        .filter(|line| !line.trim().is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
+            pending.clear();
+        } else {
+            out.append(&mut pending);
+        }
+        run_has_label = false;
+
+        out.push(cleaned);
+    }
+
+    if !run_has_label {
+        out.append(&mut pending);
+    }
+
+    out.join("\n")
+}
+
+fn gap_warrants_blank(pending: &[String], next: &str) -> bool {
+    let (Some(start), Some(end)) = (
+        pending.first().and_then(|l| lrc::time_tag_secs(l)),
+        lrc::time_tag_secs(next),
+    ) else {
+        return false;
+    };
+
+    end - start >= lrc::BLANK_GAP_MIN_SECS
 }
 
 #[cfg(test)]
@@ -88,6 +126,62 @@ mod tests {
         fn test_ad_lib_variant() {
             let input = "[Ad-lib] Ooh yeah\n[Adlib] Aah";
             let expected = "Ooh yeah\nAah";
+            assert_eq!(strip_section_labels(input), expected);
+        }
+
+        #[test]
+        fn test_lrc_label_and_following_blank_removed() {
+            let input = "[00:00.00]Intro\n[00:02.00][Verse]\n[00:04.00]\n[00:06.00]First";
+            let expected = "[00:00.00]Intro\n[00:06.00]First";
+            assert_eq!(strip_section_labels(input), expected);
+        }
+
+        #[test]
+        fn test_lrc_label_and_preceding_blank_removed() {
+            let input = "[00:00.00]A\n[00:02.00]\n[00:04.00][Verse]\n[00:06.00]B";
+            let expected = "[00:00.00]A\n[00:06.00]B";
+            assert_eq!(strip_section_labels(input), expected);
+        }
+
+        #[test]
+        fn test_lrc_label_and_blanks_both_sides_removed() {
+            let input = "[00:00.00]A\n[00:02.00]\n[00:04.00][Verse]\n[00:06.00]\n[00:08.00]B";
+            let expected = "[00:00.00]A\n[00:02.00]\n[00:08.00]B";
+            assert_eq!(strip_section_labels(input), expected);
+        }
+
+        #[test]
+        fn test_lrc_large_gap_keeps_blank() {
+            let input = "[00:01.00]Foo\n[00:03.00]\n[00:03.00][Chorus]\n[00:10.00]Bar";
+            let expected = "[00:01.00]Foo\n[00:03.00]\n[00:10.00]Bar";
+            assert_eq!(strip_section_labels(input), expected);
+        }
+
+        #[test]
+        fn test_lrc_small_gap_drops_blank() {
+            let input = "[00:01.00]Foo\n[00:03.00]\n[00:03.00][Chorus]\n[00:04.00]Bar";
+            let expected = "[00:01.00]Foo\n[00:04.00]Bar";
+            assert_eq!(strip_section_labels(input), expected);
+        }
+
+        #[test]
+        fn test_lrc_label_line_always_removed() {
+            let input = "[00:00.00]Outro line\n[00:02.00][Outro]\n[00:04.00]End";
+            let expected = "[00:00.00]Outro line\n[00:04.00]End";
+            assert_eq!(strip_section_labels(input), expected);
+        }
+
+        #[test]
+        fn test_lrc_leading_label_dropped() {
+            let input = "[00:00.00][Verse]\n[00:02.00]Hi";
+            let expected = "[00:02.00]Hi";
+            assert_eq!(strip_section_labels(input), expected);
+        }
+
+        #[test]
+        fn test_lrc_blank_without_adjacent_label_kept() {
+            let input = "[00:00.00]A\n[00:02.00]\n[00:04.00]B";
+            let expected = "[00:00.00]A\n[00:02.00]\n[00:04.00]B";
             assert_eq!(strip_section_labels(input), expected);
         }
     }

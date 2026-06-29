@@ -1,35 +1,81 @@
 use crate::types::LyricsKind;
 use extism_pdk::warn;
 use nd_pdk::{host::config, lyrics::Error as LyricsError};
-use std::collections::HashSet;
+use serde_json::Value;
+use std::{
+    collections::{BTreeMap, HashSet},
+    fmt,
+};
 
 const DEFAULT_CACHE_TTL: i64 = 168;
 const DEFAULT_NEGATIVE_CACHE_TTL: i64 = 24;
 const MIN_CACHE_TTL: i64 = 1;
 
 const DEFAULT_PLAIN_EXTENSION: &str = "txt";
-const DEFAULT_SYNCED_EXTENSION: &str = "lrc";
 const DEFAULT_INSTRUMENTAL_EXTENSION: &str = "txt";
+
 const DEFAULT_INSTRUMENTAL_TEXT: &str = "Instrumental";
 const DEFAULT_FOLDER_TEMPLATE: &str = "_lyrics/{type}/{track:album_artist} - {track:album}/{track:disc_number:2} - {track:track_number:2} {track:title}";
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ProviderEntry {
-    pub name: String,
-    pub param: Option<String>,
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct ProviderParams(BTreeMap<String, String>);
+
+impl ProviderParams {
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).map(String::as_str)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
-impl ProviderEntry {
-    pub fn display_name(&self) -> String {
-        match &self.param {
-            Some(p) => format!("{}({})", self.name, p),
-            None => self.name.clone(),
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProviderMode {
+    #[default]
+    Priority,
+    Rotation,
+}
+
+impl ProviderMode {
+    pub fn from_slug(slug: &str) -> Option<ProviderMode> {
+        match slug.trim().to_ascii_lowercase().as_str() {
+            "priority" => Some(ProviderMode::Priority),
+            "rotation" => Some(ProviderMode::Rotation),
+            _ => None,
         }
     }
 }
 
-impl std::fmt::Display for ProviderEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ProviderEntry {
+    pub name: String,
+    pub params: ProviderParams,
+}
+
+impl ProviderEntry {
+    pub fn display_name(&self) -> String {
+        if self.params.is_empty() {
+            return self.name.clone();
+        }
+
+        let joined = self
+            .params
+            .0
+            .iter()
+            .map(|(k, v)| {
+                let v = if is_sensitive_key(k) { "***" } else { v };
+                format!("{k}={v}")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        format!("{}({joined})", self.name)
+    }
+}
+
+impl fmt::Display for ProviderEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.display_name())
     }
 }
@@ -39,13 +85,13 @@ pub struct PluginConfig {
     pub write_lyrics: bool,
     pub overwrite_lyrics: bool,
     pub plain_extension: String,
-    pub synced_extension: String,
     pub instrumental_extension: String,
     pub enable_cache: bool,
     pub cache_ttl_hours: i64,
     pub negative_cache: bool,
     pub negative_cache_ttl_hours: i64,
     pub providers: Vec<ProviderEntry>,
+    pub provider_mode: ProviderMode,
     pub write_to_specific_folder: bool,
     pub write_to_specific_folder_library_id: Option<i32>,
     pub write_to_specific_folder_template: String,
@@ -60,13 +106,13 @@ impl Default for PluginConfig {
             write_lyrics: false,
             overwrite_lyrics: false,
             plain_extension: DEFAULT_PLAIN_EXTENSION.to_string(),
-            synced_extension: DEFAULT_SYNCED_EXTENSION.to_string(),
             instrumental_extension: DEFAULT_INSTRUMENTAL_EXTENSION.to_string(),
             enable_cache: true,
             cache_ttl_hours: DEFAULT_CACHE_TTL,
             negative_cache: true,
             negative_cache_ttl_hours: DEFAULT_NEGATIVE_CACHE_TTL,
             providers: vec![],
+            provider_mode: ProviderMode::default(),
             write_to_specific_folder: false,
             write_to_specific_folder_library_id: None,
             write_to_specific_folder_template: DEFAULT_FOLDER_TEMPLATE.to_string(),
@@ -83,7 +129,6 @@ impl PluginConfig {
             write_lyrics: get_bool("writeLyrics", false)?,
             overwrite_lyrics: get_bool("overwriteLyrics", false)?,
             plain_extension: resolve_extension("plainExtension", DEFAULT_PLAIN_EXTENSION)?,
-            synced_extension: resolve_extension("syncedExtension", DEFAULT_SYNCED_EXTENSION)?,
             instrumental_extension: resolve_extension(
                 "instrumentalExtension",
                 DEFAULT_INSTRUMENTAL_EXTENSION,
@@ -93,6 +138,7 @@ impl PluginConfig {
             negative_cache: get_bool("negativeCache", true)?,
             negative_cache_ttl_hours: resolve_negative_cache_ttl()?,
             providers: resolve_providers()?,
+            provider_mode: resolve_provider_mode()?,
             write_to_specific_folder: get_bool("writeToSpecificFolder", false)?,
             write_to_specific_folder_library_id: get_optional_i32(
                 "writeToSpecificFolderLibraryId",
@@ -109,39 +155,49 @@ impl PluginConfig {
         &self.lyrics_type_priority
     }
 
-    pub fn wants_synced(&self) -> bool {
-        self.lyrics_type_priority.contains(&LyricsKind::Synced)
+    pub fn wants(&self, kind: LyricsKind) -> bool {
+        self.lyrics_type_priority.contains(&kind)
     }
 
-    pub fn wants_plain(&self) -> bool {
-        self.lyrics_type_priority.contains(&LyricsKind::Plain)
+    pub fn extension_for(&self, kind: LyricsKind) -> &str {
+        match kind {
+            LyricsKind::Plain => self.plain_extension.as_str(),
+            LyricsKind::Instrumental => self.instrumental_extension.as_str(),
+            LyricsKind::Lrc => "lrc",
+            LyricsKind::Elrc => "elrc",
+            LyricsKind::Ttml => "ttml",
+            LyricsKind::Srt => "srt",
+            LyricsKind::Lyricsfile => "yml",
+        }
     }
 }
 
 fn resolve_lyrics_type_priority() -> Result<Vec<LyricsKind>, LyricsError> {
-    let want_synced = get_bool("lyricsSynced", true)?;
-    let want_plain = get_bool("lyricsPlain", true)?;
-    let prefers_synced_first = get_string("lyricsPriority")?.as_deref() != Some("plain");
+    let order = match get_string("lyricsFormats")? {
+        Some(raw) => parse_lyrics_formats(&raw),
+        None => Vec::new(),
+    };
 
-    let mut priority = Vec::new();
-
-    if want_synced {
-        priority.push(LyricsKind::Synced);
-    }
-    if want_plain {
-        priority.push(LyricsKind::Plain);
+    if order.is_empty() {
+        warn!("no lyrics formats enabled, defaulting to lrc + plain");
+        return Ok(vec![LyricsKind::Lrc, LyricsKind::Plain]);
     }
 
-    if priority.is_empty() {
-        warn!("no lyrics types selected, defaulting to synced + plain");
-        priority = vec![LyricsKind::Synced, LyricsKind::Plain];
+    Ok(order)
+}
+
+fn parse_lyrics_formats(raw: &str) -> Vec<LyricsKind> {
+    let mut order: Vec<LyricsKind> = Vec::new();
+    for slug in raw.split(',') {
+        if let Some(kind) = LyricsKind::from_slug(slug)
+            && kind != LyricsKind::Instrumental
+            && !order.contains(&kind)
+        {
+            order.push(kind);
+        }
     }
 
-    if priority.len() == 2 && !prefers_synced_first {
-        priority.reverse();
-    }
-
-    Ok(priority)
+    order
 }
 
 fn resolve_extension(key: &str, default_value: &str) -> Result<String, LyricsError> {
@@ -184,7 +240,7 @@ fn resolve_negative_cache_ttl() -> Result<i64, LyricsError> {
 }
 
 fn resolve_providers() -> Result<Vec<ProviderEntry>, LyricsError> {
-    let providers = get_string("providers")?
+    let providers = get_string("providersList")?
         .map(|s| parse_providers(&s))
         .unwrap_or_default();
 
@@ -195,42 +251,50 @@ fn resolve_providers() -> Result<Vec<ProviderEntry>, LyricsError> {
     Ok(providers)
 }
 
+fn resolve_provider_mode() -> Result<ProviderMode, LyricsError> {
+    let mode = get_string("providerMode")?.and_then(|s| ProviderMode::from_slug(&s));
+
+    match mode {
+        Some(mode) => Ok(mode),
+        None => Ok(ProviderMode::default()),
+    }
+}
+
 fn parse_providers(raw: &str) -> Vec<ProviderEntry> {
+    let rows: Vec<BTreeMap<String, Value>> = serde_json::from_str(raw).unwrap_or_default();
+
     let mut seen = HashSet::new();
-    raw.split(',')
-        .filter_map(parse_provider_entry)
+    rows.into_iter()
+        .filter_map(parse_provider_row)
         .filter(|entry| seen.insert(entry.clone()))
         .collect()
 }
 
-fn parse_provider_entry(raw: &str) -> Option<ProviderEntry> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
+fn parse_provider_row(mut row: BTreeMap<String, Value>) -> Option<ProviderEntry> {
+    let name = row
+        .remove("provider")
+        .as_ref()
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?
+        .to_string();
 
-    if let Some(paren_pos) = trimmed.find('(')
-        && trimmed.ends_with(')')
-    {
-        let name = trimmed[..paren_pos].trim();
-        if name.is_empty() {
-            return None;
-        }
-        let param = trimmed[paren_pos + 1..trimmed.len() - 1].trim();
-        let param = if param.is_empty() {
-            None
-        } else {
-            Some(param.to_string())
-        };
-        return Some(ProviderEntry {
-            name: name.to_string(),
-            param,
-        });
-    }
+    let params = row
+        .into_iter()
+        .filter_map(|(key, value)| {
+            let value = match value {
+                Value::String(s) => s.trim().to_string(),
+                Value::Bool(b) => b.to_string(),
+                Value::Number(n) => n.to_string(),
+                _ => return None,
+            };
+            (!value.is_empty()).then_some((key, value))
+        })
+        .collect();
 
     Some(ProviderEntry {
-        name: trimmed.to_string(),
-        param: None,
+        name,
+        params: ProviderParams(params),
     })
 }
 
@@ -260,15 +324,86 @@ fn get_optional_i32(key: &str) -> Result<Option<i32>, LyricsError> {
         .map(|v| v.and_then(|s| s.parse().ok()))
 }
 
+fn is_sensitive_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    ["token", "secret", "password", "cookie", "auth"]
+        .iter()
+        .any(|needle| key.contains(needle))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn entry(name: &str, param: Option<&str>) -> ProviderEntry {
+    fn entry(name: &str, params: &[(&str, &str)]) -> ProviderEntry {
         ProviderEntry {
             name: name.to_string(),
-            param: param.map(|s| s.to_string()),
+            params: ProviderParams(
+                params
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            ),
         }
+    }
+
+    #[test]
+    fn test_provider_mode_from_slug() {
+        assert_eq!(
+            ProviderMode::from_slug("priority"),
+            Some(ProviderMode::Priority)
+        );
+        assert_eq!(
+            ProviderMode::from_slug(" Rotation "),
+            Some(ProviderMode::Rotation)
+        );
+        assert_eq!(ProviderMode::from_slug("foo"), None);
+    }
+
+    #[test]
+    fn test_provider_mode_default_is_priority() {
+        assert_eq!(ProviderMode::default(), ProviderMode::Priority);
+    }
+
+    #[test]
+    fn test_parse_lyrics_formats_ordered() {
+        assert_eq!(
+            parse_lyrics_formats("ttml,lyricsfile,elrc,lrc,srt,plain"),
+            vec![
+                LyricsKind::Ttml,
+                LyricsKind::Lyricsfile,
+                LyricsKind::Elrc,
+                LyricsKind::Lrc,
+                LyricsKind::Srt,
+                LyricsKind::Plain,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_lyrics_formats_whitespace_and_case() {
+        assert_eq!(
+            parse_lyrics_formats(" LRC , Plain "),
+            vec![LyricsKind::Lrc, LyricsKind::Plain]
+        );
+    }
+
+    #[test]
+    fn test_parse_lyrics_formats_dedup_and_skips_unknown() {
+        assert_eq!(parse_lyrics_formats("lrc,bogus,lrc"), vec![LyricsKind::Lrc]);
+    }
+
+    #[test]
+    fn test_parse_lyrics_formats_excludes_instrumental() {
+        assert_eq!(
+            parse_lyrics_formats("instrumental,plain"),
+            vec![LyricsKind::Plain]
+        );
+    }
+
+    #[test]
+    fn test_parse_lyrics_formats_empty() {
+        assert_eq!(parse_lyrics_formats(""), Vec::<LyricsKind>::new());
     }
 
     #[test]
@@ -281,105 +416,96 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_providers_basic() {
-        assert_eq!(
-            parse_providers("lrclib,lyrics.ovh"),
-            vec![entry("lrclib", None), entry("lyrics.ovh", None)]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_single() {
-        assert_eq!(parse_providers("lrclib"), vec![entry("lrclib", None)]);
-    }
-
-    #[test]
-    fn test_parse_providers_whitespace() {
-        assert_eq!(
-            parse_providers(" lrclib , lyrics.ovh "),
-            vec![entry("lrclib", None), entry("lyrics.ovh", None)]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_empty_entries() {
-        assert_eq!(
-            parse_providers("lrclib,,lyrics.ovh"),
-            vec![entry("lrclib", None), entry("lyrics.ovh", None)]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_empty_string() {
-        assert_eq!(parse_providers(""), Vec::<ProviderEntry>::new());
-    }
-
-    #[test]
-    fn test_parse_providers_just_comma() {
-        assert_eq!(parse_providers(","), Vec::<ProviderEntry>::new());
-    }
-
-    #[test]
-    fn test_parse_providers_parameterized() {
-        assert_eq!(
-            parse_providers("lrclib(http://localhost:7592)"),
-            vec![entry("lrclib", Some("http://localhost:7592"))]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_mixed_parameterized_and_plain() {
-        assert_eq!(
-            parse_providers("lrclib(http://localhost:7592),lrclib,lyrics.ovh"),
-            vec![
-                entry("lrclib", Some("http://localhost:7592")),
-                entry("lrclib", None),
-                entry("lyrics.ovh", None),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_dedup_exact_duplicates() {
-        assert_eq!(
-            parse_providers("lrclib,lyrics.ovh,lrclib"),
-            vec![entry("lrclib", None), entry("lyrics.ovh", None)]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_parameterized_not_deduped_with_plain() {
-        assert_eq!(
-            parse_providers("lrclib(http://localhost:7592),lrclib"),
-            vec![
-                entry("lrclib", Some("http://localhost:7592")),
-                entry("lrclib", None),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_dedup_parameterized_duplicates() {
-        assert_eq!(
-            parse_providers("lrclib(http://x),lyrics.ovh,lrclib(http://x)"),
-            vec![entry("lrclib", Some("http://x")), entry("lyrics.ovh", None),]
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_empty_param_treated_as_none() {
-        assert_eq!(parse_providers("lrclib()"), vec![entry("lrclib", None)]);
-    }
-
-    #[test]
     fn test_display_name_with_param() {
-        let e = entry("lrclib", Some("http://localhost:7592"));
-        assert_eq!(e.display_name(), "lrclib(http://localhost:7592)");
+        let e = entry("lrclib", &[("baseUrl", "http://localhost:7592")]);
+        assert_eq!(e.display_name(), "lrclib(baseUrl=http://localhost:7592)");
+    }
+
+    #[test]
+    fn test_display_name_redacts_sensitive_params() {
+        let e = entry(
+            "applemusic",
+            &[("mediaUserToken", "abc"), ("storefront", "gb")],
+        );
+        assert_eq!(
+            e.display_name(),
+            "applemusic(mediaUserToken=***, storefront=gb)"
+        );
     }
 
     #[test]
     fn test_display_name_without_param() {
-        let e = entry("lrclib", None);
+        let e = entry("lrclib", &[]);
         assert_eq!(e.display_name(), "lrclib");
+    }
+
+    #[test]
+    fn test_parse_providers_json_basic() {
+        assert_eq!(
+            parse_providers(r#"[{"provider":"lrclib"},{"provider":"lyrics.ovh"}]"#),
+            vec![entry("lrclib", &[]), entry("lyrics.ovh", &[])]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_json_with_base_url() {
+        assert_eq!(
+            parse_providers(r#"[{"provider":"lrclib","baseUrl":"http://localhost:7592"}]"#),
+            vec![entry("lrclib", &[("baseUrl", "http://localhost:7592")])]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_json_blank_base_url_is_none() {
+        assert_eq!(
+            parse_providers(r#"[{"provider":"lrclib","baseUrl":"   "}]"#),
+            vec![entry("lrclib", &[])]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_json_named_params() {
+        assert_eq!(
+            parse_providers(
+                r#"[{"provider":"applemusic","mediaUserToken":" abc ","storefront":"gb","baseUrl":""}]"#
+            ),
+            vec![entry(
+                "applemusic",
+                &[("mediaUserToken", "abc"), ("storefront", "gb")]
+            )]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_json_bool_and_number_params() {
+        assert_eq!(
+            parse_providers(
+                r#"[{"provider":"applemusic","mediaUserToken":"abc","includeTranslations":true,"storefront":""}]"#
+            ),
+            vec![entry(
+                "applemusic",
+                &[("includeTranslations", "true"), ("mediaUserToken", "abc")]
+            )]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_json_skips_empty_provider_and_dedups() {
+        assert_eq!(
+            parse_providers(
+                r#"[{"provider":""},{"provider":"kugou"},{"provider":"kugou"},{"provider":"netease"}]"#
+            ),
+            vec![entry("kugou", &[]), entry("netease", &[])]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_json_invalid_is_empty() {
+        assert_eq!(parse_providers("not json"), Vec::<ProviderEntry>::new());
+    }
+
+    #[test]
+    fn test_parse_providers_json_empty_array() {
+        assert_eq!(parse_providers("[]"), Vec::<ProviderEntry>::new());
     }
 }

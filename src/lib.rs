@@ -14,6 +14,7 @@ mod config;
 mod format;
 mod providers;
 mod registry;
+mod selection;
 mod types;
 mod writing;
 
@@ -79,11 +80,19 @@ fn fetch_from_providers(track: &TrackInfo, cfg: &PluginConfig) -> FetchOutcome {
 
     let mut had_error = false;
 
-    for entry in &cfg.providers {
+    for entry in selection::order_providers(cfg) {
         let Some(provider) = registry.create(entry) else {
             warn!("unknown provider '{}', skipping", entry);
             continue;
         };
+
+        if !provider
+            .supported_kinds()
+            .iter()
+            .any(|&kind| cfg.wants(kind))
+        {
+            continue;
+        }
 
         match provider.fetch_lyrics(track, cfg) {
             Ok(Some(mut lyrics)) => {
