@@ -29,15 +29,15 @@ directly when available. This will only work if "Write to custom path" is disabl
 
 At this time, the following providers are available. Please report any issues you encounter while using them.
 
-| Provider    | Type                 | Parameters                   | Notes                           |
-| ----------- | -------------------- | ---------------------------- | ------------------------------- |
-| LRCLIB      | plain,lrc,lyricsfile | Custom base URL              |                                 |
-| lyrics.ovh  | plain                | Custom base URL              |                                 |
-| KuGou       | lrc,elrc             |                              |                                 |
-| NetEase     | lrc,elrc             |                              |                                 |
-| QQ Music    | lrc,elrc             |                              |                                 |
-| Apple Music | ttml                 | Media user token, Storefront | Requires an active subscription |
-| stixoi.info | plain                |                              | Greek lyrics archive            |
+| Provider    | Type                 | Translations | Romanization | Notes                           |
+| ----------- | -------------------- | :----------: | :----------: | ------------------------------- |
+| LRCLIB      | plain,lrc,lyricsfile |      ✗       |      ✗       | Supports custom base URL        |
+| lyrics.ovh  | plain                |      ✗       |      ✗       | Supports custom base URL        |
+| KuGou       | lrc,elrc             |      ✗       |      ✗       |                                 |
+| NetEase     | lrc,elrc             |      ✗       |      ✗       |                                 |
+| QQ Music    | lrc,elrc             |      ✗       |      ✗       |                                 |
+| Apple Music | ttml                 |      ✓       |      ✓       | Requires an active subscription |
+| stixoi.info | plain                |      ✗       |      ✗       | Greek lyrics archive            |
 
 ## Path variables
 

@@ -67,20 +67,30 @@ struct LyricsEntry {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct LyricsAttributes {
     ttml: Option<String>,
+    ttml_localizations: Option<String>,
 }
 
 pub struct AppleMusic {
     media_user_token: Option<String>,
     storefront: Option<String>,
+    include_translations: bool,
+    translation_language: Option<String>,
+    romanize: bool,
 }
+
+const ROMANIZED_SCRIPT: &str = "und-Latn";
 
 impl AppleMusic {
     pub fn create(params: &ProviderParams) -> Box<dyn LyricsProvider> {
         Box::new(Self {
             media_user_token: params.get("mediaUserToken").map(str::to_string),
             storefront: params.get("storefront").map(str::to_string),
+            include_translations: params.get("includeTranslations") == Some("true"),
+            translation_language: params.get("translationLanguage").map(str::to_string),
+            romanize: params.get("includeRomanization") == Some("true"),
         })
     }
 }
@@ -126,7 +136,20 @@ impl LyricsProvider for AppleMusic {
             return Ok(None);
         }
 
-        fetch_ttml(&dev_token, token, &storefront, &song.id)
+        let translation_language = self
+            .include_translations
+            .then_some(self.translation_language.as_deref())
+            .flatten();
+        let script = self.romanize.then_some(ROMANIZED_SCRIPT);
+
+        fetch_ttml(
+            &dev_token,
+            token,
+            &storefront,
+            &song.id,
+            translation_language,
+            script,
+        )
     }
 }
 
@@ -250,8 +273,10 @@ fn fetch_ttml(
     media_user_token: &str,
     storefront: &str,
     song_id: &str,
+    translation_language: Option<&str>,
+    script: Option<&str>,
 ) -> Result<Option<Lyrics>, Error> {
-    let url = format!("{BASE_URL}/catalog/{storefront}/songs/{song_id}/syllable-lyrics");
+    let url = build_lyrics_url(storefront, song_id, translation_language, script)?;
     let headers = api_headers(dev_token, media_user_token);
     let response = send_request(&url, &headers)?;
 
@@ -273,10 +298,36 @@ fn fetch_ttml(
         .data
         .into_iter()
         .next()
-        .and_then(|e| e.attributes.ttml)
+        .and_then(|e| e.attributes.ttml_localizations.or(e.attributes.ttml))
         .filter(|t| !t.trim().is_empty());
 
     Ok(ttml.map(Lyrics::Ttml))
+}
+
+fn build_lyrics_url(
+    storefront: &str,
+    song_id: &str,
+    translation_language: Option<&str>,
+    script: Option<&str>,
+) -> Result<String, Error> {
+    let base = format!("{BASE_URL}/catalog/{storefront}/songs/{song_id}/syllable-lyrics");
+
+    if translation_language.is_none() && script.is_none() {
+        return Ok(base);
+    }
+
+    let mut params: Vec<(&str, &str)> = vec![("extend", "ttmlLocalizations")];
+    if let Some(lang) = translation_language {
+        params.push(("l[lyrics]", lang));
+    }
+    if let Some(script) = script {
+        params.push(("l[script]", script));
+    }
+
+    let qs = serde_urlencoded::to_string(&params)
+        .map_err(|e| Error::new(format!("applemusic: failed to encode lyrics query: {e}")))?;
+
+    Ok(format!("{base}?{qs}"))
 }
 
 fn api_headers(dev_token: &str, media_user_token: &str) -> HashMap<String, String> {
@@ -305,4 +356,44 @@ fn send_request(url: &str, headers: &HashMap<String, String>) -> Result<HTTPResp
     })
     .map_err(|e| Error::new(format!("applemusic: HTTP request failed: {e}")))?
     .ok_or_else(|| Error::new("applemusic: received empty HTTP response"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_lyrics_url_plain() {
+        assert_eq!(
+            build_lyrics_url("us", "123", None, None).unwrap(),
+            "https://amp-api.music.apple.com/v1/catalog/us/songs/123/syllable-lyrics"
+        );
+    }
+
+    #[test]
+    fn test_build_lyrics_url_translation() {
+        assert_eq!(
+            build_lyrics_url("us", "123", Some("en-US"), None).unwrap(),
+            "https://amp-api.music.apple.com/v1/catalog/us/songs/123/syllable-lyrics\
+             ?extend=ttmlLocalizations&l%5Blyrics%5D=en-US"
+        );
+    }
+
+    #[test]
+    fn test_build_lyrics_url_script() {
+        assert_eq!(
+            build_lyrics_url("us", "123", None, Some("und-Latn")).unwrap(),
+            "https://amp-api.music.apple.com/v1/catalog/us/songs/123/syllable-lyrics\
+             ?extend=ttmlLocalizations&l%5Bscript%5D=und-Latn"
+        );
+    }
+
+    #[test]
+    fn test_build_lyrics_url_translation_and_script() {
+        assert_eq!(
+            build_lyrics_url("gb", "123", Some("es-ES"), Some("und-Latn")).unwrap(),
+            "https://amp-api.music.apple.com/v1/catalog/gb/songs/123/syllable-lyrics\
+             ?extend=ttmlLocalizations&l%5Blyrics%5D=es-ES&l%5Bscript%5D=und-Latn"
+        );
+    }
 }

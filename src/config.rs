@@ -282,8 +282,13 @@ fn parse_provider_row(mut row: BTreeMap<String, Value>) -> Option<ProviderEntry>
     let params = row
         .into_iter()
         .filter_map(|(key, value)| {
-            let value = value.as_str()?.trim();
-            (!value.is_empty()).then(|| (key, value.to_string()))
+            let value = match value {
+                Value::String(s) => s.trim().to_string(),
+                Value::Bool(b) => b.to_string(),
+                Value::Number(n) => n.to_string(),
+                _ => return None,
+            };
+            (!value.is_empty()).then_some((key, value))
         })
         .collect();
 
@@ -467,6 +472,19 @@ mod tests {
             vec![entry(
                 "applemusic",
                 &[("mediaUserToken", "abc"), ("storefront", "gb")]
+            )]
+        );
+    }
+
+    #[test]
+    fn test_parse_providers_json_bool_and_number_params() {
+        assert_eq!(
+            parse_providers(
+                r#"[{"provider":"applemusic","mediaUserToken":"abc","includeTranslations":true,"storefront":""}]"#
+            ),
+            vec![entry(
+                "applemusic",
+                &[("includeTranslations", "true"), ("mediaUserToken", "abc")]
             )]
         );
     }
