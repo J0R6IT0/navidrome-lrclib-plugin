@@ -3,7 +3,7 @@ use crate::providers::register_providers;
 use crate::registry::ProviderRegistry;
 use crate::types::Lyrics;
 use config::PluginConfig;
-use extism_pdk::warn;
+use extism_pdk::{info, warn};
 use nd_pdk::lyrics::{
     Error as LyricsError, GetLyricsRequest, GetLyricsResponse, Lyrics as LyricsPlugin, LyricsText,
     TrackInfo,
@@ -82,7 +82,7 @@ fn fetch_from_providers(track: &TrackInfo, cfg: &PluginConfig) -> FetchOutcome {
 
     for entry in selection::order_providers(cfg) {
         let Some(provider) = registry.create(entry) else {
-            warn!("unknown provider '{}', skipping", entry);
+            warn!("unknown provider '{}', skipping", entry.name);
             continue;
         };
 
@@ -94,21 +94,30 @@ fn fetch_from_providers(track: &TrackInfo, cfg: &PluginConfig) -> FetchOutcome {
             continue;
         }
 
+        let label = provider_label(&entry.name, &provider.log_params());
+        info!("trying provider '{}'", label);
         match provider.fetch_lyrics(track, cfg) {
             Ok(Some(mut lyrics)) => {
                 lyrics.sanitize(cfg);
                 if lyrics.is_empty() {
                     warn!(
                         "provider '{}' returned empty lyrics after sanitization, skipping",
-                        entry
+                        label
                     );
                 } else {
+                    info!(
+                        "provider '{}' returned {} lyrics",
+                        label,
+                        lyrics.kind().slug()
+                    );
                     return FetchOutcome::Found(lyrics);
                 }
             }
-            Ok(None) => {}
+            Ok(None) => {
+                info!("provider '{}' returned no lyrics", label);
+            }
             Err(e) => {
-                warn!("provider '{}' failed: {}", entry, e);
+                warn!("provider '{}' failed: {}", label, e);
                 had_error = true;
             }
         }
@@ -119,6 +128,20 @@ fn fetch_from_providers(track: &TrackInfo, cfg: &PluginConfig) -> FetchOutcome {
     } else {
         FetchOutcome::NotFound
     }
+}
+
+fn provider_label(name: &str, params: &[(&'static str, String)]) -> String {
+    if params.is_empty() {
+        return name.to_string();
+    }
+
+    let joined = params
+        .iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    format!("{name}({joined})")
 }
 
 fn write_lyrics_if_enabled(track: &TrackInfo, lyrics: &Lyrics, cfg: &PluginConfig) {

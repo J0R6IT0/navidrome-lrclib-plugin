@@ -5,7 +5,7 @@ use crate::{
     types::{Lyrics, LyricsKind},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use extism_pdk::warn;
+use extism_pdk::{info, warn};
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
     lyrics::{Error, TrackInfo},
@@ -96,6 +96,7 @@ impl LyricsProvider for Kugou {
             .as_ref()
             .is_some_and(|p| p.language == "纯音乐")
         {
+            info!("kugou: track is instrumental");
             return Ok(Some(Lyrics::Instrumental));
         }
 
@@ -123,6 +124,7 @@ impl LyricsProvider for Kugou {
                     })?;
 
                     if lrc::is_instrumental(&lrc) {
+                        info!("kugou: track is instrumental");
                         return Ok(Some(Lyrics::Instrumental));
                     }
                     if !lrc.trim().is_empty() {

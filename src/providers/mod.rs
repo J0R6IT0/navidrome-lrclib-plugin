@@ -40,4 +40,9 @@ pub trait LyricsProvider {
     fn supported_kinds(&self) -> &'static [LyricsKind];
 
     fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error>;
+
+    /// Configuration parameters worth including in logs, as `(key, value)` pairs.
+    fn log_params(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
 }

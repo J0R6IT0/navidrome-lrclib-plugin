@@ -4,6 +4,7 @@ use crate::{
     providers::{BROWSER_USER_AGENT, LyricsProvider},
     types::{Lyrics, LyricsKind},
 };
+use extism_pdk::info;
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
     lyrics::{Error, TrackInfo},
@@ -95,6 +96,7 @@ impl LyricsProvider for NetEase {
         let response = fetch_lyrics(song.id)?;
 
         if response.pure_music {
+            info!("netease: track is instrumental");
             return Ok(Some(Lyrics::Instrumental));
         }
 

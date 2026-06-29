@@ -8,7 +8,7 @@ use crate::{
     types::{Lyrics, LyricsKind},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use extism_pdk::warn;
+use extism_pdk::{info, warn};
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
     lyrics::{Error, TrackInfo},
@@ -130,6 +130,7 @@ impl LyricsProvider for QQMusic {
         let is_qrc = qrc::is_qrc(&content);
 
         if !is_qrc && lrc::is_instrumental(&content) {
+            info!("qqmusic: track is instrumental");
             return Ok(Some(Lyrics::Instrumental));
         }
 

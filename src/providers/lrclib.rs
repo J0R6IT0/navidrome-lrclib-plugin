@@ -52,6 +52,10 @@ impl LyricsProvider for Lrclib {
         &[LyricsKind::Lrc, LyricsKind::Plain, LyricsKind::Lyricsfile]
     }
 
+    fn log_params(&self) -> Vec<(&'static str, String)> {
+        vec![("baseUrl", self.base_url.clone())]
+    }
+
     fn fetch_lyrics(
         &self,
         track: &TrackInfo,
