@@ -4,7 +4,7 @@ use crate::{
 };
 use extism_pdk::warn;
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
-use nd_pdk::{host::cache, lyrics::Error as LyricsError};
+use nd_pdk::{host::kvstore, lyrics::Error as LyricsError};
 use std::io::{Read, Write};
 
 const PREFIX_NEGATIVE: &str = "miss:";
@@ -72,28 +72,28 @@ impl LyricsCache {
                 .map_err(|e| LyricsError::new(format!("compression failed: {e}")))?,
         };
 
-        cache::set_bytes(&cache_key(track_id, lyrics.kind()), bytes, self.ttl)
+        kvstore::set_with_ttl(&cache_key(track_id, lyrics.kind()), bytes, self.ttl)
             .map_err(|e| LyricsError::new(format!("failed to write to cache: {e}")))?;
 
         Ok(())
     }
 
     fn is_instrumental(&self, track_id: &str) -> bool {
-        cache::get_bytes(&cache_key(track_id, LyricsKind::Instrumental))
+        kvstore::get(&cache_key(track_id, LyricsKind::Instrumental))
             .ok()
             .flatten()
             .is_some()
     }
 
     fn is_negative(&self, track_id: &str) -> bool {
-        cache::get_bytes(&negative_cache_key(track_id))
+        kvstore::get(&negative_cache_key(track_id))
             .ok()
             .flatten()
             .is_some()
     }
 
     pub fn write_negative(&self, track_id: &str) -> Result<(), LyricsError> {
-        cache::set_bytes(
+        kvstore::set_with_ttl(
             &negative_cache_key(track_id),
             SENTINEL.to_vec(),
             self.negative_ttl,
@@ -102,7 +102,7 @@ impl LyricsCache {
     }
 
     fn get(&self, track_id: &str, kind: LyricsKind) -> Option<Lyrics> {
-        let bytes = cache::get_bytes(&cache_key(track_id, kind)).ok()??;
+        let bytes = kvstore::get(&cache_key(track_id, kind)).ok()??;
 
         match kind {
             LyricsKind::Instrumental => {

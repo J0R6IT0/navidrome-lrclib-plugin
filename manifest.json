@@ -15,7 +15,11 @@
       "filesystem": true
     },
     "cache": {
-      "reason": "To cache lyrics."
+      "reason": "To cache transient provider state (Apple Music dev token, storefront, provider rotation)."
+    },
+    "kvstore": {
+      "reason": "To cache lyrics persistently across restarts.",
+      "maxSize": "1000MB"
     }
   },
 

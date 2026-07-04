@@ -3,7 +3,7 @@ use crate::providers::register_providers;
 use crate::registry::ProviderRegistry;
 use crate::types::Lyrics;
 use config::PluginConfig;
-use extism_pdk::{info, warn};
+use extism_pdk::{debug, info, warn};
 use nd_pdk::lyrics::{
     Error as LyricsError, GetLyricsRequest, GetLyricsResponse, Lyrics as LyricsPlugin, LyricsText,
     TrackInfo,
@@ -35,17 +35,25 @@ impl LyricsPlugin for Plugin {
             )
         });
 
+        let track_desc = track_label(&track);
+
         if let Some(cache) = &cache {
             match cache.lookup(&track.id, &cfg) {
                 CacheLookup::Found(lyrics) => {
+                    info!("cache hit ({}) for '{}'", lyrics.kind().slug(), track_desc);
                     write_lyrics_if_enabled(&track, &lyrics, &cfg);
                     return Ok(make_response(lyrics.text(&cfg).to_string()));
                 }
                 CacheLookup::Negative => {
+                    info!("cache hit (negative) for '{track_desc}', skipping providers");
                     return Err(LyricsError::new("no lyrics found (cached)"));
                 }
-                CacheLookup::Miss => {}
+                CacheLookup::Miss => {
+                    info!("cache miss for '{track_desc}', querying providers");
+                }
             }
+        } else {
+            debug!("cache disabled, querying providers for '{track_desc}'");
         }
 
         match fetch_from_providers(&track, &cfg) {
@@ -55,12 +63,14 @@ impl LyricsPlugin for Plugin {
                 Ok(make_response(lyrics.text(&cfg).to_string()))
             }
             FetchOutcome::NotFound => {
+                info!("no lyrics found for '{track_desc}' from any provider");
                 if cfg.negative_cache {
-                    save_negative_to_cache(&cache, &track.id);
+                    save_negative_to_cache(&cache, &track.id, &cfg);
                 }
                 Err(LyricsError::new("no lyrics found from any provider"))
             }
             FetchOutcome::ProviderError => {
+                warn!("all providers errored while fetching lyrics for '{track_desc}'");
                 Err(LyricsError::new("no lyrics found from any provider"))
             }
         }
@@ -153,18 +163,36 @@ fn write_lyrics_if_enabled(track: &TrackInfo, lyrics: &Lyrics, cfg: &PluginConfi
 }
 
 fn save_to_cache(cache: &Option<LyricsCache>, track_id: &str, lyrics: &Lyrics, cfg: &PluginConfig) {
-    if let Some(cache) = cache
-        && let Err(err) = cache.write(track_id, lyrics, cfg)
-    {
-        warn!("failed to persist lyrics to cache: {err}");
+    if let Some(cache) = cache {
+        match cache.write(track_id, lyrics, cfg) {
+            Ok(()) => info!(
+                "cached {} lyrics for track '{track_id}' (ttl {}h)",
+                lyrics.kind().slug(),
+                cfg.cache_ttl_hours
+            ),
+            Err(err) => warn!("failed to persist lyrics to cache: {err}"),
+        }
     }
 }
 
-fn save_negative_to_cache(cache: &Option<LyricsCache>, track_id: &str) {
-    if let Some(cache) = cache
-        && let Err(err) = cache.write_negative(track_id)
-    {
-        warn!("failed to persist negative cache entry: {err}");
+fn save_negative_to_cache(cache: &Option<LyricsCache>, track_id: &str, cfg: &PluginConfig) {
+    if let Some(cache) = cache {
+        match cache.write_negative(track_id) {
+            Ok(()) => info!(
+                "cached negative result for track '{track_id}' (ttl {}h)",
+                cfg.negative_cache_ttl_hours
+            ),
+            Err(err) => warn!("failed to persist negative cache entry: {err}"),
+        }
+    }
+}
+
+fn track_label(track: &TrackInfo) -> String {
+    match (track.artist.trim(), track.title.trim()) {
+        ("", "") => track.id.clone(),
+        ("", title) => title.to_string(),
+        (artist, "") => artist.to_string(),
+        (artist, title) => format!("{artist} - {title}"),
     }
 }
 
