@@ -10,6 +10,7 @@ use std::{
 const DEFAULT_CACHE_TTL: i64 = 168;
 const DEFAULT_NEGATIVE_CACHE_TTL: i64 = 24;
 const MIN_CACHE_TTL: i64 = 1;
+const MAX_CACHE_TTL: i64 = 1_000_000;
 
 const DEFAULT_PLAIN_EXTENSION: &str = "txt";
 const DEFAULT_INSTRUMENTAL_EXTENSION: &str = "txt";
@@ -214,29 +215,48 @@ fn resolve_extension(key: &str, default_value: &str) -> Result<String, LyricsErr
 }
 
 fn resolve_cache_ttl() -> Result<i64, LyricsError> {
-    let raw = get_i64("cacheTtlHours", DEFAULT_CACHE_TTL)?;
-
-    if raw < MIN_CACHE_TTL {
-        warn!(
-            "cacheTtlHours {raw} is below minimum of {MIN_CACHE_TTL}, using {MIN_CACHE_TTL} instead"
-        );
-        return Ok(MIN_CACHE_TTL);
-    }
-
-    Ok(raw)
+    Ok(clamp_cache_ttl(
+        "cacheTtlHours",
+        get_i64("cacheTtlHours", DEFAULT_CACHE_TTL)?,
+    ))
 }
 
 fn resolve_negative_cache_ttl() -> Result<i64, LyricsError> {
-    let raw = get_i64("negativeCacheTtlHours", DEFAULT_NEGATIVE_CACHE_TTL)?;
+    Ok(clamp_cache_ttl(
+        "negativeCacheTtlHours",
+        get_i64("negativeCacheTtlHours", DEFAULT_NEGATIVE_CACHE_TTL)?,
+    ))
+}
 
-    if raw < MIN_CACHE_TTL {
-        warn!(
-            "negativeCacheTtlHours {raw} is below minimum of {MIN_CACHE_TTL}, using {MIN_CACHE_TTL} instead"
-        );
-        return Ok(MIN_CACHE_TTL);
+fn clamp_cache_ttl(key: &str, raw: i64) -> i64 {
+    match classify_ttl(raw) {
+        TtlClamp::InRange => raw,
+        TtlClamp::BelowMin => {
+            warn!("{key} {raw} is below minimum of {MIN_CACHE_TTL}h, clamping to {MIN_CACHE_TTL}h");
+            MIN_CACHE_TTL
+        }
+        TtlClamp::AboveMax => {
+            warn!("{key} {raw} exceeds maximum of {MAX_CACHE_TTL}h, clamping to {MAX_CACHE_TTL}h");
+            MAX_CACHE_TTL
+        }
     }
+}
 
-    Ok(raw)
+#[derive(Debug, PartialEq, Eq)]
+enum TtlClamp {
+    InRange,
+    BelowMin,
+    AboveMax,
+}
+
+fn classify_ttl(raw: i64) -> TtlClamp {
+    if raw < MIN_CACHE_TTL {
+        TtlClamp::BelowMin
+    } else if raw > MAX_CACHE_TTL {
+        TtlClamp::AboveMax
+    } else {
+        TtlClamp::InRange
+    }
 }
 
 fn resolve_providers() -> Result<Vec<ProviderEntry>, LyricsError> {
@@ -313,9 +333,47 @@ fn get_bool(key: &str, default: bool) -> Result<bool, LyricsError> {
 }
 
 fn get_i64(key: &str, default: i64) -> Result<i64, LyricsError> {
-    config::get(key)
-        .map_err(|e| LyricsError::new(e.to_string()))
-        .map(|v| v.and_then(|s| s.parse().ok()).unwrap_or(default))
+    let raw = config::get(key).map_err(|e| LyricsError::new(e.to_string()))?;
+    let Some(s) = raw else {
+        return Ok(default);
+    };
+
+    Ok(match parse_i64(&s) {
+        I64Parse::Value(v) => v,
+        I64Parse::Saturated(v) => {
+            warn!("{key} value '{s}' exceeds 64-bit integer range, saturating to {v}");
+            v
+        }
+        I64Parse::Invalid => {
+            warn!("{key} value '{s}' is not a valid integer, using default {default}");
+            default
+        }
+    })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum I64Parse {
+    Value(i64),
+    Saturated(i64),
+    Invalid,
+}
+
+fn parse_i64(raw: &str) -> I64Parse {
+    if let Ok(v) = raw.parse::<i64>() {
+        return I64Parse::Value(v);
+    }
+
+    let trimmed = raw.trim();
+    let (negative, digits) = match trimmed.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
+    };
+
+    if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
+        I64Parse::Saturated(if negative { i64::MIN } else { i64::MAX })
+    } else {
+        I64Parse::Invalid
+    }
 }
 
 fn get_optional_i32(key: &str) -> Result<Option<i32>, LyricsError> {
@@ -345,6 +403,57 @@ mod tests {
                     .collect(),
             ),
         }
+    }
+
+    #[test]
+    fn test_parse_i64_normal() {
+        assert_eq!(parse_i64("336"), I64Parse::Value(336));
+        assert_eq!(parse_i64("-5"), I64Parse::Value(-5));
+        assert_eq!(parse_i64(&i64::MAX.to_string()), I64Parse::Value(i64::MAX));
+    }
+
+    #[test]
+    fn test_parse_i64_overflow_saturates() {
+        assert_eq!(
+            parse_i64("10000000000000000000000000"),
+            I64Parse::Saturated(i64::MAX)
+        );
+        assert_eq!(
+            parse_i64("-10000000000000000000000000"),
+            I64Parse::Saturated(i64::MIN)
+        );
+    }
+
+    #[test]
+    fn test_parse_i64_garbage_is_invalid() {
+        assert_eq!(parse_i64("abc"), I64Parse::Invalid);
+        assert_eq!(parse_i64(""), I64Parse::Invalid);
+        assert_eq!(parse_i64("12x"), I64Parse::Invalid);
+    }
+
+    #[test]
+    fn test_classify_ttl_below_min() {
+        assert_eq!(classify_ttl(0), TtlClamp::BelowMin);
+        assert_eq!(classify_ttl(-100), TtlClamp::BelowMin);
+    }
+
+    #[test]
+    fn test_classify_ttl_above_max() {
+        assert_eq!(classify_ttl(i64::MAX), TtlClamp::AboveMax);
+        assert_eq!(classify_ttl(MAX_CACHE_TTL + 1), TtlClamp::AboveMax);
+    }
+
+    #[test]
+    fn test_classify_ttl_in_range() {
+        assert_eq!(classify_ttl(336), TtlClamp::InRange);
+        assert_eq!(classify_ttl(MIN_CACHE_TTL), TtlClamp::InRange);
+        assert_eq!(classify_ttl(MAX_CACHE_TTL), TtlClamp::InRange);
+    }
+
+    #[test]
+    fn test_max_ttl_seconds_fit_go_duration() {
+        let max_seconds = MAX_CACHE_TTL.saturating_mul(3600);
+        assert!(max_seconds.checked_mul(1_000_000_000).is_some());
     }
 
     #[test]

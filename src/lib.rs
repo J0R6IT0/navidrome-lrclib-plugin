@@ -30,8 +30,8 @@ impl LyricsPlugin for Plugin {
 
         let cache = cfg.enable_cache.then(|| {
             LyricsCache::new(
-                cfg.cache_ttl_hours * 3600,
-                cfg.negative_cache_ttl_hours * 3600,
+                cfg.cache_ttl_hours.saturating_mul(3600),
+                cfg.negative_cache_ttl_hours.saturating_mul(3600),
             )
         });
 

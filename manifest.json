@@ -178,6 +178,7 @@
           "type": "integer",
           "title": "Cache TTL (hours)",
           "minimum": 1,
+          "maximum": 1000000,
           "default": 168,
           "description": "How long cached lyrics remain valid. Default is 7 days."
         },
@@ -192,6 +193,7 @@
           "type": "integer",
           "title": "Negative cache TTL (hours)",
           "minimum": 1,
+          "maximum": 1000000,
           "default": 24,
           "description": "How long negative cache entries remain valid. Default is 24 hours."
         },
