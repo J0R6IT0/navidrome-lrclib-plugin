@@ -59,6 +59,26 @@ pub struct ProviderEntry {
 }
 
 impl ProviderEntry {
+    pub fn cache_id(&self) -> String {
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut mix = |bytes: &[u8]| {
+            for byte in bytes {
+                hash ^= *byte as u64;
+                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        };
+
+        mix(self.name.as_bytes());
+        for (k, v) in &self.params.0 {
+            mix(b"\0");
+            mix(k.as_bytes());
+            mix(b"=");
+            mix(v.as_bytes());
+        }
+
+        format!("{hash:016x}")
+    }
+
     pub fn display_name(&self) -> String {
         if self.params.is_empty() {
             return self.name.clone();
@@ -550,6 +570,28 @@ mod tests {
         assert_eq!(normalize_extension("...lrc"), "lrc");
         assert_eq!(normalize_extension("  .txt  "), "txt");
         assert_eq!(normalize_extension("."), "");
+    }
+
+    #[test]
+    fn test_cache_id_is_stable() {
+        let e = entry("applemusic", &[("mediaUserToken", "abc")]);
+        assert_eq!(e.cache_id(), e.cache_id());
+    }
+
+    #[test]
+    fn test_cache_id_differs_by_name_and_params() {
+        assert_ne!(
+            entry("lrclib", &[]).cache_id(),
+            entry("kugou", &[]).cache_id()
+        );
+        assert_ne!(
+            entry("lrclib", &[("baseUrl", "http://a")]).cache_id(),
+            entry("lrclib", &[("baseUrl", "http://b")]).cache_id()
+        );
+        assert_ne!(
+            entry("lrclib", &[]).cache_id(),
+            entry("lrclib", &[("baseUrl", "http://a")]).cache_id()
+        );
     }
 
     #[test]

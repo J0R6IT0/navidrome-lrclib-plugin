@@ -198,7 +198,7 @@
 
         "negativeCache": {
           "type": "boolean",
-          "title": "Cache negative results (i.e. no lyrics found)",
+          "title": "Cache negative results (i.e. no lyrics found) (per-provider)",
           "default": true
         },
 
@@ -208,7 +208,7 @@
           "minimum": 1,
           "maximum": 1000000,
           "default": 24,
-          "description": "How long negative cache entries remain valid. Default is 24 hours."
+          "description": "How long per-provider negative cache entries remain valid. Default is 24 hours."
         },
 
         "writeLyrics": {

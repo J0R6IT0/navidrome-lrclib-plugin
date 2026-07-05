@@ -44,10 +44,6 @@ impl LyricsPlugin for Plugin {
                     write_lyrics_if_enabled(&track, &lyrics, &cfg);
                     return Ok(make_response(lyrics.text(&cfg).to_string()));
                 }
-                CacheLookup::Negative => {
-                    info!("cache hit (negative) for '{track_desc}', skipping providers");
-                    return Err(LyricsError::new("no lyrics found (cached)"));
-                }
                 CacheLookup::Miss => {
                     info!("cache miss for '{track_desc}', querying providers");
                 }
@@ -56,7 +52,7 @@ impl LyricsPlugin for Plugin {
             debug!("cache disabled, querying providers for '{track_desc}'");
         }
 
-        match fetch_from_providers(&track, &cfg) {
+        match fetch_from_providers(&track, &cfg, &cache) {
             FetchOutcome::Found(lyrics) => {
                 write_lyrics_if_enabled(&track, &lyrics, &cfg);
                 save_to_cache(&cache, &track.id, &lyrics, &cfg);
@@ -64,9 +60,6 @@ impl LyricsPlugin for Plugin {
             }
             FetchOutcome::NotFound => {
                 info!("no lyrics found for '{track_desc}' from any provider");
-                if cfg.negative_cache {
-                    save_negative_to_cache(&cache, &track.id, &cfg);
-                }
                 Err(LyricsError::new("no lyrics found from any provider"))
             }
             FetchOutcome::ProviderError => {
@@ -84,7 +77,11 @@ enum FetchOutcome {
     ProviderError,
 }
 
-fn fetch_from_providers(track: &TrackInfo, cfg: &PluginConfig) -> FetchOutcome {
+fn fetch_from_providers(
+    track: &TrackInfo,
+    cfg: &PluginConfig,
+    cache: &Option<LyricsCache>,
+) -> FetchOutcome {
     let mut registry = ProviderRegistry::new();
     register_providers(&mut registry);
 
@@ -105,6 +102,13 @@ fn fetch_from_providers(track: &TrackInfo, cfg: &PluginConfig) -> FetchOutcome {
         }
 
         let label = provider_label(&entry.name, &provider.log_params());
+        let provider_id = entry.cache_id();
+
+        if is_provider_negative(cache, &track.id, &provider_id) {
+            info!("provider '{}' negative-cached for this track, skipping", label);
+            continue;
+        }
+
         info!("trying provider '{}'", label);
         match provider.fetch_lyrics(track, cfg) {
             Ok(Some(mut lyrics)) => {
@@ -114,6 +118,7 @@ fn fetch_from_providers(track: &TrackInfo, cfg: &PluginConfig) -> FetchOutcome {
                         "provider '{}' returned empty lyrics after sanitization, skipping",
                         label
                     );
+                    mark_provider_negative(cache, &track.id, &provider_id, cfg);
                 } else {
                     info!(
                         "provider '{}' returned {} lyrics",
@@ -125,6 +130,7 @@ fn fetch_from_providers(track: &TrackInfo, cfg: &PluginConfig) -> FetchOutcome {
             }
             Ok(None) => {
                 info!("provider '{}' returned no lyrics", label);
+                mark_provider_negative(cache, &track.id, &provider_id, cfg);
             }
             Err(e) => {
                 warn!("provider '{}' failed: {}", label, e);
@@ -138,6 +144,12 @@ fn fetch_from_providers(track: &TrackInfo, cfg: &PluginConfig) -> FetchOutcome {
     } else {
         FetchOutcome::NotFound
     }
+}
+
+fn is_provider_negative(cache: &Option<LyricsCache>, track_id: &str, provider_id: &str) -> bool {
+    cache
+        .as_ref()
+        .is_some_and(|cache| cache.is_negative(track_id, provider_id))
 }
 
 fn provider_label(name: &str, params: &[(&'static str, String)]) -> String {
@@ -175,11 +187,20 @@ fn save_to_cache(cache: &Option<LyricsCache>, track_id: &str, lyrics: &Lyrics, c
     }
 }
 
-fn save_negative_to_cache(cache: &Option<LyricsCache>, track_id: &str, cfg: &PluginConfig) {
+fn mark_provider_negative(
+    cache: &Option<LyricsCache>,
+    track_id: &str,
+    provider_id: &str,
+    cfg: &PluginConfig,
+) {
+    if !cfg.negative_cache {
+        return;
+    }
+
     if let Some(cache) = cache {
-        match cache.write_negative(track_id) {
+        match cache.write_negative(track_id, provider_id) {
             Ok(()) => info!(
-                "cached negative result for track '{track_id}' (ttl {}h)",
+                "cached negative result for track '{track_id}' (provider {provider_id}, ttl {}h)",
                 cfg.negative_cache_ttl_hours
             ),
             Err(err) => warn!("failed to persist negative cache entry: {err}"),

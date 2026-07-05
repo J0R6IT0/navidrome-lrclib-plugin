@@ -15,13 +15,12 @@ fn cache_key(track_id: &str, kind: LyricsKind) -> String {
     format!("{}:{track_id}", kind.slug())
 }
 
-fn negative_cache_key(track_id: &str) -> String {
-    format!("{PREFIX_NEGATIVE}{track_id}")
+fn negative_cache_key(track_id: &str, provider: &str) -> String {
+    format!("{PREFIX_NEGATIVE}{provider}:{track_id}")
 }
 
 pub enum CacheLookup {
     Found(Lyrics),
-    Negative,
     Miss,
 }
 
@@ -45,10 +44,6 @@ impl LyricsCache {
 
         if self.is_instrumental(track_id) {
             return CacheLookup::Found(Lyrics::Instrumental);
-        }
-
-        if self.is_negative(track_id) {
-            return CacheLookup::Negative;
         }
 
         CacheLookup::Miss
@@ -85,16 +80,16 @@ impl LyricsCache {
             .is_some()
     }
 
-    fn is_negative(&self, track_id: &str) -> bool {
-        kvstore::get(&negative_cache_key(track_id))
+    pub fn is_negative(&self, track_id: &str, provider: &str) -> bool {
+        kvstore::get(&negative_cache_key(track_id, provider))
             .ok()
             .flatten()
             .is_some()
     }
 
-    pub fn write_negative(&self, track_id: &str) -> Result<(), LyricsError> {
+    pub fn write_negative(&self, track_id: &str, provider: &str) -> Result<(), LyricsError> {
         kvstore::set_with_ttl(
-            &negative_cache_key(track_id),
+            &negative_cache_key(track_id, provider),
             SENTINEL.to_vec(),
             self.negative_ttl,
         )
@@ -180,7 +175,10 @@ mod tests {
 
     #[test]
     fn test_negative_cache_key() {
-        assert_eq!(negative_cache_key("abc123"), "miss:abc123");
+        assert_eq!(
+            negative_cache_key("abc123", "deadbeef"),
+            "miss:deadbeef:abc123"
+        );
     }
 
     #[test]
