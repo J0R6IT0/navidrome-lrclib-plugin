@@ -16,6 +16,7 @@ const DEFAULT_PLAIN_EXTENSION: &str = "txt";
 const DEFAULT_INSTRUMENTAL_EXTENSION: &str = "txt";
 
 const DEFAULT_DURATION_TOLERANCE_SECS: f32 = 3.0;
+const MIN_DURATION_TOLERANCE_SECS: f32 = 1.0;
 const MAX_DURATION_TOLERANCE_SECS: f32 = 3600.0;
 
 const DEFAULT_INSTRUMENTAL_TEXT: &str = "Instrumental";
@@ -275,7 +276,10 @@ fn resolve_duration_tolerance() -> Result<f32, LyricsError> {
         DEFAULT_DURATION_TOLERANCE_SECS as i64,
     )?;
 
-    let clamped = raw.clamp(0, MAX_DURATION_TOLERANCE_SECS as i64);
+    let clamped = raw.clamp(
+        MIN_DURATION_TOLERANCE_SECS as i64,
+        MAX_DURATION_TOLERANCE_SECS as i64,
+    );
     if clamped != raw {
         warn!("durationToleranceSeconds {raw} is out of range, clamping to {clamped}s");
     }
