@@ -28,8 +28,6 @@ const SEARCH_METHOD: &str = "DoSearchForQQMusicMobile";
 const LYRIC_MODULE: &str = "music.musichallSong.PlayLyricInfo";
 const LYRIC_METHOD: &str = "GetPlayLyricInfo";
 
-const DURATION_TOLERANCE_SECS: u64 = 2;
-
 #[derive(Serialize)]
 struct Common {
     wid: String,
@@ -116,8 +114,9 @@ impl LyricsProvider for QQMusic {
             .as_str();
 
         let query = format!("{} {first_artist}", track.title);
+        let target_ms = (track.duration * 1000.0).round() as u64;
 
-        let mid = match find_song(&query, track.duration)? {
+        let mid = match find_song(&query, target_ms, cfg.duration_tolerance_ms())? {
             Some(m) => m,
             None => return Ok(None),
         };
@@ -161,7 +160,7 @@ impl LyricsProvider for QQMusic {
     }
 }
 
-fn find_song(query: &str, target_duration: f32) -> Result<Option<String>, Error> {
+fn find_song(query: &str, target_ms: u64, tolerance_ms: u64) -> Result<Option<String>, Error> {
     let param = SearchParam {
         searchid: "12345678901234567",
         query,
@@ -180,12 +179,10 @@ fn find_song(query: &str, target_duration: f32) -> Result<Option<String>, Error>
         .cloned()
         .unwrap_or_default();
 
-    let target_secs = target_duration.round() as u64;
-
     let song = items.iter().find(|item| {
         item["interval"]
             .as_u64()
-            .map(|d| d.abs_diff(target_secs) <= DURATION_TOLERANCE_SECS)
+            .map(|secs| (secs * 1000).abs_diff(target_ms) <= tolerance_ms)
             .unwrap_or(false)
     });
 

@@ -85,8 +85,9 @@ impl LyricsProvider for Kugou {
             .as_str();
 
         let keyword = format!("{} {first_artist}", track.title);
+        let target_ms = (track.duration * 1000.0).round() as u64;
 
-        let song = match find_song(&keyword, track.duration)? {
+        let song = match find_song(&keyword, target_ms, cfg.duration_tolerance_ms())? {
             Some(s) => s,
             None => return Ok(None),
         };
@@ -139,7 +140,11 @@ impl LyricsProvider for Kugou {
     }
 }
 
-fn find_song(keyword: &str, target_duration: f32) -> Result<Option<SongInfo>, Error> {
+fn find_song(
+    keyword: &str,
+    target_ms: u64,
+    tolerance_ms: u64,
+) -> Result<Option<SongInfo>, Error> {
     let query = serde_urlencoded::to_string([
         ("format", "json"),
         ("keyword", keyword),
@@ -161,12 +166,9 @@ fn find_song(keyword: &str, target_duration: f32) -> Result<Option<SongInfo>, Er
     let parsed: SongSearchResponse = serde_json::from_slice(&response.body)
         .map_err(|e| Error::new(format!("kugou: failed to parse song search response: {e}")))?;
 
-    let tolerance = 2u64;
-    let target_secs = target_duration.round() as u64;
-
     Ok(parsed.data.info.into_iter().find(|s| {
         s.duration
-            .map(|d| d.abs_diff(target_secs) <= tolerance)
+            .map(|secs| (secs * 1000).abs_diff(target_ms) <= tolerance_ms)
             .unwrap_or(false)
     }))
 }

@@ -116,7 +116,7 @@ impl LyricsProvider for AppleMusic {
     fn fetch_lyrics(
         &self,
         track: &TrackInfo,
-        _cfg: &PluginConfig,
+        cfg: &PluginConfig,
     ) -> Result<Option<Lyrics>, Error> {
         let token = self.media_user_token.as_deref().ok_or_else(|| {
             Error::new(
@@ -133,13 +133,14 @@ impl LyricsProvider for AppleMusic {
 
         let query = format!("{} {first_artist}", track.title);
         let target_ms = (track.duration * 1000.0).round() as u64;
+        let tolerance_ms = cfg.duration_tolerance_ms();
 
         let dev_token = get_dev_token(false)?;
-        let result = match self.lookup(&dev_token, token, &query, target_ms) {
+        let result = match self.lookup(&dev_token, token, &query, target_ms, tolerance_ms) {
             Err(LookupError::Unauthorized) => {
                 info!("applemusic: cached developer token rejected, refreshing");
                 let dev_token = get_dev_token(true)?;
-                self.lookup(&dev_token, token, &query, target_ms)
+                self.lookup(&dev_token, token, &query, target_ms, tolerance_ms)
             }
             result => result,
         };
@@ -170,10 +171,18 @@ impl AppleMusic {
         media_user_token: &str,
         query: &str,
         target_ms: u64,
+        tolerance_ms: u64,
     ) -> Result<Option<Lyrics>, LookupError> {
         let storefront = self.resolve_storefront(dev_token, media_user_token)?;
 
-        let song = match search_song(dev_token, media_user_token, &storefront, query, target_ms)? {
+        let song = match search_song(
+            dev_token,
+            media_user_token,
+            &storefront,
+            query,
+            target_ms,
+            tolerance_ms,
+        )? {
             Some(s) => s,
             None => return Ok(None),
         };
@@ -316,6 +325,7 @@ fn search_song(
     storefront: &str,
     query: &str,
     target_ms: u64,
+    tolerance_ms: u64,
 ) -> Result<Option<Song>, LookupError> {
     let qs = serde_urlencoded::to_string([("types", "songs"), ("term", query)])
         .map_err(|e| Error::new(format!("applemusic: failed to encode search query: {e}")))?;
@@ -347,7 +357,14 @@ fn search_song(
         .filter(|s| s.attributes.has_lyrics != Some(false))
         .min_by_key(|s| duration_diff(s, target_ms));
 
-    Ok(best)
+    match best {
+        Some(song) if duration_diff(&song, target_ms) <= tolerance_ms => Ok(Some(song)),
+        Some(_) => {
+            info!("applemusic: closest match exceeds duration tolerance, skipping");
+            Ok(None)
+        }
+        None => Ok(None),
+    }
 }
 
 fn duration_diff(song: &Song, target_ms: u64) -> u64 {
@@ -494,6 +511,31 @@ mod tests {
             storefront_cache_key("token-abc"),
             storefront_cache_key("token-xyz")
         );
+    }
+
+    fn song_with_duration(duration_in_millis: Option<u64>) -> Song {
+        Song {
+            id: "1".into(),
+            attributes: SongAttributes {
+                duration_in_millis,
+                has_lyrics: Some(true),
+            },
+        }
+    }
+
+    #[test]
+    fn test_duration_diff_within_and_beyond_tolerance() {
+        let target = 200_000;
+        let tolerance_ms = 3_000;
+
+        let close = song_with_duration(Some(201_500));
+        assert!(duration_diff(&close, target) <= tolerance_ms);
+
+        let far = song_with_duration(Some(260_000));
+        assert!(duration_diff(&far, target) > tolerance_ms);
+
+        let unknown = song_with_duration(None);
+        assert!(duration_diff(&unknown, target) > tolerance_ms);
     }
 
     #[test]

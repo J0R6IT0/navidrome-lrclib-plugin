@@ -47,6 +47,15 @@
           "default": false
         },
 
+        "durationToleranceSeconds": {
+          "type": "integer",
+          "title": "Duration tolerance (seconds)",
+          "minimum": 0,
+          "maximum": 3600,
+          "default": 3,
+          "description": "Maximum allowed difference between the track's duration and a provider result's duration. Increasing this may return less accurate results."
+        },
+
         "providersList": {
           "type": "array",
           "title": "Lyrics providers",
@@ -270,6 +279,10 @@
             {
               "type": "Control",
               "scope": "#/properties/lyricsFormats"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/durationToleranceSeconds"
             },
             {
               "type": "Control",

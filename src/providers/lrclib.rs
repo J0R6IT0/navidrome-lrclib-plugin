@@ -11,7 +11,6 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 const DEFAULT_BASE_URL: &str = "https://lrclib.net";
-const DURATION_TOLERANCE_SECS: f32 = 2.0;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,9 +25,9 @@ struct LrclibRecord {
 }
 
 impl LrclibRecord {
-    fn matches_duration(&self, target: f32) -> bool {
+    fn matches_duration(&self, target: f32, tolerance: f32) -> bool {
         self.duration
-            .is_some_and(|d| (d - target).abs() <= DURATION_TOLERANCE_SECS)
+            .is_some_and(|d| (d - target).abs() <= tolerance)
     }
 }
 
@@ -96,7 +95,7 @@ impl LyricsProvider for Lrclib {
 
         let query = format!("{first_artist} {}", track.title);
         for record in search_by_query(&self.base_url, &query)? {
-            if !record.matches_duration(track.duration) {
+            if !record.matches_duration(track.duration, cfg.duration_tolerance_secs) {
                 continue;
             }
 

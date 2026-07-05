@@ -17,8 +17,6 @@ mod yrc;
 const SEARCH_URL: &str = "https://music.163.com/api/search/get";
 const LYRICS_URL: &str = "https://music.163.com/api/song/lyric/v1";
 
-const DURATION_TOLERANCE_MS: u64 = 3_000;
-
 #[derive(Debug, Deserialize)]
 struct SearchResponse {
     result: SearchResult,
@@ -88,7 +86,7 @@ impl LyricsProvider for NetEase {
         let query = format!("{first_artist} {}", track.title);
         let target_ms = (track.duration * 1000.0).round() as u64;
 
-        let song = match search_song(&query, target_ms)? {
+        let song = match search_song(&query, target_ms, cfg.duration_tolerance_ms())? {
             Some(s) => s,
             None => return Ok(None),
         };
@@ -134,7 +132,7 @@ impl LyricsProvider for NetEase {
     }
 }
 
-fn search_song(query: &str, target_ms: u64) -> Result<Option<Song>, Error> {
+fn search_song(query: &str, target_ms: u64, tolerance_ms: u64) -> Result<Option<Song>, Error> {
     let qs =
         serde_urlencoded::to_string([("s", query), ("type", "1"), ("limit", "5"), ("offset", "0")])
             .map_err(|e| Error::new(format!("netease: failed to encode search query: {e}")))?;
@@ -143,7 +141,7 @@ fn search_song(query: &str, target_ms: u64) -> Result<Option<Song>, Error> {
 
     Ok(parsed.result.songs.into_iter().find(|s| {
         s.duration_ms
-            .map(|d| d.abs_diff(target_ms) <= DURATION_TOLERANCE_MS)
+            .map(|d| d.abs_diff(target_ms) <= tolerance_ms)
             .unwrap_or(false)
     }))
 }

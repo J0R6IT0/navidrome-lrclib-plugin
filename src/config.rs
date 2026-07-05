@@ -15,6 +15,9 @@ const MAX_CACHE_TTL: i64 = 1_000_000;
 const DEFAULT_PLAIN_EXTENSION: &str = "txt";
 const DEFAULT_INSTRUMENTAL_EXTENSION: &str = "txt";
 
+const DEFAULT_DURATION_TOLERANCE_SECS: f32 = 3.0;
+const MAX_DURATION_TOLERANCE_SECS: f32 = 3600.0;
+
 const DEFAULT_INSTRUMENTAL_TEXT: &str = "Instrumental";
 const DEFAULT_FOLDER_TEMPLATE: &str = "_lyrics/{type}/{track:album_artist} - {track:album}/{track:disc_number:2} - {track:track_number:2} {track:title}";
 
@@ -98,6 +101,7 @@ pub struct PluginConfig {
     pub write_to_specific_folder_template: String,
     pub strip_section_labels: bool,
     pub instrumental_text: String,
+    pub duration_tolerance_secs: f32,
 }
 
 impl Default for PluginConfig {
@@ -119,6 +123,7 @@ impl Default for PluginConfig {
             write_to_specific_folder_template: DEFAULT_FOLDER_TEMPLATE.to_string(),
             strip_section_labels: false,
             instrumental_text: DEFAULT_INSTRUMENTAL_TEXT.to_string(),
+            duration_tolerance_secs: DEFAULT_DURATION_TOLERANCE_SECS,
         }
     }
 }
@@ -149,6 +154,7 @@ impl PluginConfig {
             strip_section_labels: get_bool("stripSectionLabels", false)?,
             instrumental_text: get_string("instrumentalText")?
                 .unwrap_or_else(|| DEFAULT_INSTRUMENTAL_TEXT.to_string()),
+            duration_tolerance_secs: resolve_duration_tolerance()?,
         })
     }
 
@@ -158,6 +164,10 @@ impl PluginConfig {
 
     pub fn wants(&self, kind: LyricsKind) -> bool {
         self.lyrics_type_priority.contains(&kind)
+    }
+
+    pub fn duration_tolerance_ms(&self) -> u64 {
+        (self.duration_tolerance_secs * 1000.0).round() as u64
     }
 
     pub fn extension_for(&self, kind: LyricsKind) -> &str {
@@ -257,6 +267,20 @@ fn classify_ttl(raw: i64) -> TtlClamp {
     } else {
         TtlClamp::InRange
     }
+}
+
+fn resolve_duration_tolerance() -> Result<f32, LyricsError> {
+    let raw = get_i64(
+        "durationToleranceSeconds",
+        DEFAULT_DURATION_TOLERANCE_SECS as i64,
+    )?;
+
+    let clamped = raw.clamp(0, MAX_DURATION_TOLERANCE_SECS as i64);
+    if clamped != raw {
+        warn!("durationToleranceSeconds {raw} is out of range, clamping to {clamped}s");
+    }
+
+    Ok(clamped as f32)
 }
 
 fn resolve_providers() -> Result<Vec<ProviderEntry>, LyricsError> {
