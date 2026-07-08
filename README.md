@@ -33,6 +33,7 @@ At this time, the following providers are available. Please report any issues yo
 | ----------- | -------------------- | :----------: | :----------: | ------------------------------- |
 | LRCLIB      | plain,lrc,lyricsfile |      ✗       |      ✗       | Supports custom base URL        |
 | lyrics.ovh  | plain                |      ✗       |      ✗       | Supports custom base URL        |
+| lrcmux      | plain,lrc,elrc       |      ✗       |      ✗       | Supports custom base URL        |
 | KuGou       | lrc,elrc             |      ✗       |      ✗       |                                 |
 | NetEase     | lrc,elrc             |      ✗       |      ✗       |                                 |
 | QQ Music    | lrc,elrc             |      ✗       |      ✗       |                                 |
