@@ -10,8 +10,9 @@ A Navidrome plugin to fetch lyrics from multiple sources. Formerly Navidrome LRC
 - Support for multiple providers (see below).
 - Choose which lyrics types to fetch (LRC, enhanced LRC, TTML, SRT, YAML lyrics file, plain), with configurable priority.
 - Sanitizes lyrics and optionally strips section labels ([Verse], [Chorus], etc.)
-- In-memory caching of lyrics for a configurable duration.
+- Caching of lyrics for a configurable duration.
 - Option to write lyrics to files, next to tracks or in custom paths.
+- And much more!
 
 ## Installation
 
