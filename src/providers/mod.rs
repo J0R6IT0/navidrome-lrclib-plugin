@@ -1,7 +1,7 @@
 use crate::{
     config::PluginConfig,
     providers::{
-        applemusic::AppleMusic, kugou::Kugou, lrclib::Lrclib, lyricsovh::LyricsOvh,
+        applemusic::AppleMusic, kugou::Kugou, lrclib::Lrclib, lrcmux::LrcMux, lyricsovh::LyricsOvh,
         netease::NetEase, qqmusic::QQMusic, stixoi::Stixoi,
     },
     registry::ProviderRegistry,
@@ -12,6 +12,7 @@ use nd_pdk::lyrics::{Error, TrackInfo};
 mod applemusic;
 mod kugou;
 mod lrclib;
+mod lrcmux;
 mod lyricsovh;
 mod netease;
 mod qqmusic;
@@ -29,6 +30,7 @@ const BROWSER_USER_AGENT: &str =
 pub fn register_providers(registry: &mut ProviderRegistry) {
     registry.register("lrclib", Lrclib::create);
     registry.register("lyrics.ovh", LyricsOvh::create);
+    registry.register("lrcmux", LrcMux::create);
     registry.register("kugou", Kugou::create);
     registry.register("netease", NetEase::create);
     registry.register("qqmusic", QQMusic::create);
