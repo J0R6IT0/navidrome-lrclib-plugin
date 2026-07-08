@@ -4,32 +4,23 @@ use crate::{
 };
 use extism_pdk::warn;
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
-use nd_pdk::{host::cache, lyrics::Error as LyricsError};
+use nd_pdk::{host::kvstore, lyrics::Error as LyricsError};
 use std::io::{Read, Write};
 
-const PREFIX_SYNCED: &str = "lrc:synced:";
-const PREFIX_PLAIN: &str = "lrc:plain:";
-const PREFIX_INSTRUMENTAL: &str = "lrc:instrumental:";
-const PREFIX_NEGATIVE: &str = "lrc:miss:";
+const PREFIX_NEGATIVE: &str = "miss:";
 
 const SENTINEL: &[u8] = &[1u8];
 
 fn cache_key(track_id: &str, kind: LyricsKind) -> String {
-    let prefix = match kind {
-        LyricsKind::Synced => PREFIX_SYNCED,
-        LyricsKind::Plain => PREFIX_PLAIN,
-        LyricsKind::Instrumental => PREFIX_INSTRUMENTAL,
-    };
-    format!("{prefix}{track_id}")
+    format!("{}:{track_id}", kind.slug())
 }
 
-fn negative_cache_key(track_id: &str) -> String {
-    format!("{PREFIX_NEGATIVE}{track_id}")
+fn negative_cache_key(track_id: &str, provider: &str) -> String {
+    format!("{PREFIX_NEGATIVE}{provider}:{track_id}")
 }
 
 pub enum CacheLookup {
     Found(Lyrics),
-    Negative,
     Miss,
 }
 
@@ -55,10 +46,6 @@ impl LyricsCache {
             return CacheLookup::Found(Lyrics::Instrumental);
         }
 
-        if self.is_negative(track_id) {
-            return CacheLookup::Negative;
-        }
-
         CacheLookup::Miss
     }
 
@@ -80,29 +67,29 @@ impl LyricsCache {
                 .map_err(|e| LyricsError::new(format!("compression failed: {e}")))?,
         };
 
-        cache::set_bytes(&cache_key(track_id, lyrics.kind()), bytes, self.ttl)
+        kvstore::set_with_ttl(&cache_key(track_id, lyrics.kind()), bytes, self.ttl)
             .map_err(|e| LyricsError::new(format!("failed to write to cache: {e}")))?;
 
         Ok(())
     }
 
     fn is_instrumental(&self, track_id: &str) -> bool {
-        cache::get_bytes(&cache_key(track_id, LyricsKind::Instrumental))
+        kvstore::get(&cache_key(track_id, LyricsKind::Instrumental))
             .ok()
             .flatten()
             .is_some()
     }
 
-    fn is_negative(&self, track_id: &str) -> bool {
-        cache::get_bytes(&negative_cache_key(track_id))
+    pub fn is_negative(&self, track_id: &str, provider: &str) -> bool {
+        kvstore::get(&negative_cache_key(track_id, provider))
             .ok()
             .flatten()
             .is_some()
     }
 
-    pub fn write_negative(&self, track_id: &str) -> Result<(), LyricsError> {
-        cache::set_bytes(
-            &negative_cache_key(track_id),
+    pub fn write_negative(&self, track_id: &str, provider: &str) -> Result<(), LyricsError> {
+        kvstore::set_with_ttl(
+            &negative_cache_key(track_id, provider),
             SENTINEL.to_vec(),
             self.negative_ttl,
         )
@@ -110,7 +97,7 @@ impl LyricsCache {
     }
 
     fn get(&self, track_id: &str, kind: LyricsKind) -> Option<Lyrics> {
-        let bytes = cache::get_bytes(&cache_key(track_id, kind)).ok()??;
+        let bytes = kvstore::get(&cache_key(track_id, kind)).ok()??;
 
         match kind {
             LyricsKind::Instrumental => {
@@ -122,10 +109,14 @@ impl LyricsCache {
                 }
             }
 
-            LyricsKind::Synced | LyricsKind::Plain => match decompress(&bytes) {
+            _ => match decompress(&bytes) {
                 Ok(text) => Some(match kind {
-                    LyricsKind::Synced => Lyrics::Synced(text),
                     LyricsKind::Plain => Lyrics::Plain(text),
+                    LyricsKind::Lrc => Lyrics::Lrc(text),
+                    LyricsKind::Elrc => Lyrics::Elrc(text),
+                    LyricsKind::Ttml => Lyrics::Ttml(text),
+                    LyricsKind::Srt => Lyrics::Srt(text),
+                    LyricsKind::Lyricsfile => Lyrics::Lyricsfile(text),
                     LyricsKind::Instrumental => unreachable!(),
                 }),
 
@@ -160,26 +151,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cache_key_synced() {
-        assert_eq!(cache_key("abc123", LyricsKind::Synced), "lrc:synced:abc123");
+    fn test_cache_key_lrc() {
+        assert_eq!(cache_key("abc123", LyricsKind::Lrc), "lrc:abc123");
+    }
+
+    #[test]
+    fn test_cache_key_elrc() {
+        assert_eq!(cache_key("abc123", LyricsKind::Elrc), "elrc:abc123");
     }
 
     #[test]
     fn test_cache_key_plain() {
-        assert_eq!(cache_key("abc123", LyricsKind::Plain), "lrc:plain:abc123");
+        assert_eq!(cache_key("abc123", LyricsKind::Plain), "plain:abc123");
     }
 
     #[test]
     fn test_cache_key_instrumental() {
         assert_eq!(
             cache_key("abc123", LyricsKind::Instrumental),
-            "lrc:instrumental:abc123"
+            "instrumental:abc123"
         );
     }
 
     #[test]
     fn test_negative_cache_key() {
-        assert_eq!(negative_cache_key("abc123"), "lrc:miss:abc123");
+        assert_eq!(
+            negative_cache_key("abc123", "deadbeef"),
+            "miss:deadbeef:abc123"
+        );
     }
 
     #[test]

@@ -1,8 +1,8 @@
-use crate::config::ProviderEntry;
+use crate::config::{ProviderEntry, ProviderParams};
 use crate::providers::LyricsProvider;
 use std::collections::HashMap;
 
-type ProviderFactory = fn(Option<&str>) -> Box<dyn LyricsProvider>;
+type ProviderFactory = fn(&ProviderParams) -> Box<dyn LyricsProvider>;
 
 #[derive(Default)]
 pub struct ProviderRegistry {
@@ -20,6 +20,6 @@ impl ProviderRegistry {
 
     pub fn create(&self, entry: &ProviderEntry) -> Option<Box<dyn LyricsProvider>> {
         let factory = self.factories.get(&entry.name)?;
-        Some(factory(entry.param.as_deref()))
+        Some(factory(&entry.params))
     }
 }

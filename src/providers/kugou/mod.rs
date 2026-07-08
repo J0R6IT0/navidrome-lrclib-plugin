@@ -1,16 +1,19 @@
 use crate::{
-    config::PluginConfig,
+    config::{PluginConfig, ProviderParams},
     format::lrc,
-    providers::{FIREFOX_USER_AGENT, LyricsProvider},
-    types::Lyrics,
+    providers::{BROWSER_USER_AGENT, LyricsProvider},
+    types::{Lyrics, LyricsKind},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
+use extism_pdk::{info, warn};
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
     lyrics::{Error, TrackInfo},
 };
 use serde::Deserialize;
 use std::collections::HashMap;
+
+mod krc;
 
 const SONG_SEARCH_URL: &str = "http://mobilecdn.kugou.com/api/v3/search/song";
 const LYRICS_SEARCH_URL: &str = "http://lyrics.kugou.com/search";
@@ -51,6 +54,8 @@ struct LyricsSearchResponse {
 struct Candidate {
     id: String,
     accesskey: String,
+    #[serde(default)]
+    krctype: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,17 +66,17 @@ struct DownloadResponse {
 pub struct Kugou;
 
 impl Kugou {
-    pub fn create(_param: Option<&str>) -> Box<dyn LyricsProvider> {
+    pub fn create(_params: &ProviderParams) -> Box<dyn LyricsProvider> {
         Box::new(Self)
     }
 }
 
 impl LyricsProvider for Kugou {
-    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
-        if !cfg.wants_synced() {
-            return Ok(None);
-        }
+    fn supported_kinds(&self) -> &'static [LyricsKind] {
+        &[LyricsKind::Lrc, LyricsKind::Elrc]
+    }
 
+    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
         let first_artist = track
             .artists
             .first()
@@ -80,8 +85,9 @@ impl LyricsProvider for Kugou {
             .as_str();
 
         let keyword = format!("{} {first_artist}", track.title);
+        let target_ms = (track.duration * 1000.0).round() as u64;
 
-        let song = match find_song(&keyword, track.duration)? {
+        let song = match find_song(&keyword, target_ms, cfg.duration_tolerance_ms())? {
             Some(s) => s,
             None => return Ok(None),
         };
@@ -91,6 +97,7 @@ impl LyricsProvider for Kugou {
             .as_ref()
             .is_some_and(|p| p.language == "纯音乐")
         {
+            info!("kugou: track is instrumental");
             return Ok(Some(Lyrics::Instrumental));
         }
 
@@ -99,17 +106,45 @@ impl LyricsProvider for Kugou {
             None => return Ok(None),
         };
 
-        let lrc = download_lrc(&candidate.id, &candidate.accesskey)?;
+        for &kind in cfg.resolve_order() {
+            match kind {
+                LyricsKind::Elrc if candidate.krctype != 0 => {
+                    let bytes = download_raw(&candidate.id, &candidate.accesskey, "krc")?;
+                    match krc::to_enhanced_lrc(&bytes) {
+                        Ok(elrc) if !elrc.trim().is_empty() => {
+                            return Ok(Some(Lyrics::Elrc(elrc)));
+                        }
+                        Ok(_) => {}
+                        Err(e) => warn!("kugou: failed to decode krc lyrics: {e}"),
+                    }
+                }
+                LyricsKind::Lrc => {
+                    let bytes = download_raw(&candidate.id, &candidate.accesskey, "lrc")?;
+                    let lrc = String::from_utf8(bytes).map_err(|e| {
+                        Error::new(format!("kugou: lyrics content is not valid UTF-8: {e}"))
+                    })?;
 
-        if lrc::is_instrumental(&lrc) {
-            Ok(Some(Lyrics::Instrumental))
-        } else {
-            Ok(Some(Lyrics::Synced(lrc)))
+                    if lrc::is_instrumental(&lrc) {
+                        info!("kugou: track is instrumental");
+                        return Ok(Some(Lyrics::Instrumental));
+                    }
+                    if !lrc.trim().is_empty() {
+                        return Ok(Some(Lyrics::Lrc(lrc)));
+                    }
+                }
+                _ => {}
+            }
         }
+
+        Ok(None)
     }
 }
 
-fn find_song(keyword: &str, target_duration: f32) -> Result<Option<SongInfo>, Error> {
+fn find_song(
+    keyword: &str,
+    target_ms: u64,
+    tolerance_ms: u64,
+) -> Result<Option<SongInfo>, Error> {
     let query = serde_urlencoded::to_string([
         ("format", "json"),
         ("keyword", keyword),
@@ -131,12 +166,9 @@ fn find_song(keyword: &str, target_duration: f32) -> Result<Option<SongInfo>, Er
     let parsed: SongSearchResponse = serde_json::from_slice(&response.body)
         .map_err(|e| Error::new(format!("kugou: failed to parse song search response: {e}")))?;
 
-    let tolerance = 2u64;
-    let target_secs = target_duration.round() as u64;
-
     Ok(parsed.data.info.into_iter().find(|s| {
         s.duration
-            .map(|d| d.abs_diff(target_secs) <= tolerance)
+            .map(|secs| (secs * 1000).abs_diff(target_ms) <= tolerance_ms)
             .unwrap_or(false)
     }))
 }
@@ -176,13 +208,13 @@ fn find_candidate(hash: &str, duration: Option<u64>) -> Result<Option<Candidate>
     Ok(parsed.candidates.into_iter().next())
 }
 
-fn download_lrc(id: &str, accesskey: &str) -> Result<String, Error> {
+fn download_raw(id: &str, accesskey: &str, fmt: &str) -> Result<Vec<u8>, Error> {
     let query = serde_urlencoded::to_string([
         ("ver", "1"),
         ("client", "pc"),
         ("id", id),
         ("accesskey", accesskey),
-        ("fmt", "lrc"),
+        ("fmt", fmt),
         ("charset", "utf8"),
     ])
     .map_err(|e| Error::new(format!("kugou: failed to encode download query: {e}")))?;
@@ -199,17 +231,14 @@ fn download_lrc(id: &str, accesskey: &str) -> Result<String, Error> {
     let parsed: DownloadResponse = serde_json::from_slice(&response.body)
         .map_err(|e| Error::new(format!("kugou: failed to parse download response: {e}")))?;
 
-    let bytes = STANDARD
+    STANDARD
         .decode(&parsed.content)
-        .map_err(|e| Error::new(format!("kugou: failed to decode lyrics content: {e}")))?;
-
-    String::from_utf8(bytes)
-        .map_err(|e| Error::new(format!("kugou: lyrics content is not valid UTF-8: {e}")))
+        .map_err(|e| Error::new(format!("kugou: failed to decode lyrics content: {e}")))
 }
 
 fn send_request(url: &str) -> Result<HTTPResponse, Error> {
     let mut headers = HashMap::new();
-    headers.insert("User-Agent".into(), FIREFOX_USER_AGENT.into());
+    headers.insert("User-Agent".into(), BROWSER_USER_AGENT.into());
 
     http::send(HTTPRequest {
         url: url.into(),

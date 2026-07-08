@@ -1,7 +1,7 @@
 use crate::{
-    config::PluginConfig,
+    config::{PluginConfig, ProviderParams},
     providers::{LyricsProvider, USER_AGENT},
-    types::Lyrics,
+    types::{Lyrics, LyricsKind},
 };
 use nd_pdk::{
     host::http::{self, HTTPRequest, HTTPResponse},
@@ -23,19 +23,27 @@ pub struct LyricsOvh {
 }
 
 impl LyricsOvh {
-    pub fn create(param: Option<&str>) -> Box<dyn LyricsProvider> {
+    pub fn create(params: &ProviderParams) -> Box<dyn LyricsProvider> {
         Box::new(Self {
-            base_url: param.unwrap_or(DEFAULT_BASE_URL).to_string(),
+            base_url: params.get("baseUrl").unwrap_or(DEFAULT_BASE_URL).to_string(),
         })
     }
 }
 
 impl LyricsProvider for LyricsOvh {
-    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
-        if !cfg.wants_plain() {
-            return Ok(None);
-        }
+    fn supported_kinds(&self) -> &'static [LyricsKind] {
+        &[LyricsKind::Plain]
+    }
 
+    fn log_params(&self) -> Vec<(&'static str, String)> {
+        vec![("baseUrl", self.base_url.clone())]
+    }
+
+    fn fetch_lyrics(
+        &self,
+        track: &TrackInfo,
+        _cfg: &PluginConfig,
+    ) -> Result<Option<Lyrics>, Error> {
         let first_artist = track
             .artists
             .first()
