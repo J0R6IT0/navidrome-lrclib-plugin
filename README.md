@@ -21,8 +21,11 @@ Make sure your Navidrome version is at least `v0.63.0`.
 1. Download the latest `nd-lyrics.ndp` from the Releases page and place it in your plugins folder.
 2. Add `nd-lyrics` to the `LyricsPriority` config option. See [here](https://www.navidrome.org/docs/usage/configuration/options/#:~:text=true-,LyricsPriority,-ND_LYRICSPRIORITY).
 
-TIP: If you are using the "Write lyrics files" option, you can do `".ttml,.yaml,.yml,.elrc,.lrc,.srt,.txt,embedded,nd-lyrics"` so Navidrome reads the files
-directly when available. This will only work if "Write to custom path" is disabled.
+> [!IMPORTANT]
+> The value added to `LyricsPriority` should match the name of the plugin without the extension. If you rename the plugin to `lyrics.npd`, you should add `lyrics` instead of `nd-lyrics`.
+
+> [!TIP]
+> If you are using the "Write lyrics files" option, you can do `".ttml,.yaml,.yml,.elrc,.lrc,.srt,.txt,embedded,nd-lyrics"` so Navidrome reads the files directly when available. This will only work if "Write to custom path" is disabled.
 
 3. You may need to restart Navidrome for the plugin to be detected. Don't forget to enable the plugin and configure it to your liking.
 
