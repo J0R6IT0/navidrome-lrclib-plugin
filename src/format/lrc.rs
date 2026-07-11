@@ -24,6 +24,8 @@ const CREDIT_PREFIXES: &[&str] = &[
     "Lyrics",
     "Composer",
     "Lyricist",
+    "Producers",
+    "Writers",
     "Arranger",
     "Translator",
     "Adapted by",
