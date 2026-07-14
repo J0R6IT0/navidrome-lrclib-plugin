@@ -4,7 +4,7 @@ pub mod lrc;
 
 pub fn strip_section_labels(lyrics: &str) -> String {
     let re = Regex::new(
-        r"(?i)\[(?:verse|pre[- ]?verse|chorus|pre[- ]?chorus|post[- ]?chorus|bridge|hook|refrain|intro|outro|coda|interlude|instrumental|breakdown|solo|drop|chant|skit|ad-?lib|overture|finale|couplet|coro|pre[- ]?coro|post[- ]?coro|verso|puente|refrán|interludio)\b[^\]]*\]"
+        r"(?i)^(?:verse|pre[- ]?verse|chorus|pre[- ]?chorus|post[- ]?chorus|bridge|hook|refrain|intro|outro|coda|interlude|instrumental|breakdown|solo|drop|chant|skit|ad-?lib|overture|finale|couplet|coro|pre[- ]?coro|post[- ]?coro|verso|puente|refrán|interludio)\b"
     )
     .unwrap();
 
@@ -14,7 +14,7 @@ pub fn strip_section_labels(lyrics: &str) -> String {
     let mut run_has_label = false;
 
     for line in lyrics.lines() {
-        let stripped = re.replace_all(line, "");
+        let stripped = strip_labels_in_line(line, &re);
         let cleaned = stripped.replace("  ", " ");
 
         let cleaned = if line.trim_start().starts_with('[') {
@@ -29,7 +29,7 @@ pub fn strip_section_labels(lyrics: &str) -> String {
 
         if lrc::is_blank_timed_line(&cleaned) {
             run_has_label |= !lrc::is_blank_timed_line(line);
-            pending.push(cleaned);
+            pending.push(lrc::timestamp_only(&cleaned));
             continue;
         }
 
@@ -51,6 +51,30 @@ pub fn strip_section_labels(lyrics: &str) -> String {
     }
 
     out.join("\n")
+}
+
+fn strip_labels_in_line(line: &str, re: &Regex) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+
+    while let Some(open) = rest.find('[') {
+        let Some(close) = rest[open..].find(']').map(|i| open + i) else {
+            break;
+        };
+
+        let content = lrc::strip_word_tags(&rest[open + 1..close]);
+
+        if re.is_match(content.trim()) {
+            out.push_str(&rest[..open]);
+        } else {
+            out.push_str(&rest[..=close]);
+        }
+
+        rest = &rest[close + 1..];
+    }
+
+    out.push_str(rest);
+    out
 }
 
 fn gap_warrants_blank(pending: &[String], next: &str) -> bool {
@@ -127,6 +151,22 @@ mod tests {
             let input = "[Ad-lib] Ooh yeah\n[Adlib] Aah";
             let expected = "Ooh yeah\nAah";
             assert_eq!(strip_section_labels(input), expected);
+        }
+
+        #[test]
+        fn test_enhanced_lrc_label_line_removed() {
+            let input = concat!(
+                "[00:00.06]<00:00.06>[<00:00.13>Intro<00:00.20>]<00:00.27>\n",
+                "[00:00.27]<00:00.27>Getting <00:00.72>late"
+            );
+            let expected = "[00:00.27]<00:00.27>Getting <00:00.72>late";
+            assert_eq!(strip_section_labels(input), expected);
+        }
+
+        #[test]
+        fn test_enhanced_lrc_word_tags_preserved() {
+            let input = "[00:10.00]<00:10.00>Hello <00:10.50>world";
+            assert_eq!(strip_section_labels(input), input);
         }
 
         #[test]

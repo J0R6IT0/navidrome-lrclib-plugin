@@ -117,6 +117,13 @@ pub(crate) fn is_blank_timed_line(line: &str) -> bool {
     )
 }
 
+pub(crate) fn timestamp_only(line: &str) -> String {
+    match line.find(']') {
+        Some(end) => line[..=end].to_string(),
+        None => line.to_string(),
+    }
+}
+
 fn keep_line(line: &str, first_time_tag_seen: &mut bool) -> bool {
     let trimmed = line.trim_start_matches('\u{feff}').trim();
 
@@ -174,7 +181,7 @@ fn is_credit_line(text: &str) -> bool {
     })
 }
 
-fn strip_word_tags(text: &str) -> Cow<'_, str> {
+pub(crate) fn strip_word_tags(text: &str) -> Cow<'_, str> {
     if !text.contains('<') {
         return Cow::Borrowed(text);
     }
