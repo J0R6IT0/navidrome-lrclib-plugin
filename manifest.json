@@ -178,7 +178,8 @@
           "default": "priority",
           "oneOf": [
             { "const": "priority", "title": "Priority" },
-            { "const": "rotation", "title": "Rotation" }
+            { "const": "rotation", "title": "Rotation" },
+            { "const": "quality", "title": "Best quality" }
           ]
         },
 
@@ -315,6 +316,10 @@
             {
               "type": "Label",
               "text": "• Rotation: each lookup starts with the next provider in the list, cycling through them on successive calls. If the chosen provider returns nothing, the rest are tried as fallbacks. Useful to avoid rate limits."
+            },
+            {
+              "type": "Label",
+              "text": "• Best quality: keeps querying providers until it has the highest-priority format they can offer, then returns the best result. Skips providers that cannot beat what is already fetched. Ties go to the higher provider. More requests per lookup."
             },
             {
               "type": "Control",

@@ -44,6 +44,16 @@ At this time, the following providers are available. Please report any issues yo
 | Apple Music | ttml                 |      ✓       |      ✓       | Requires an active subscription |
 | stixoi.info | plain                |      ✗       |      ✗       | Greek lyrics archive            |
 
+## Provider modes
+
+The **provider mode** controls how the provider list is used on each lookup:
+
+- **Priority**: tries providers top to bottom and the first one that returns lyrics wins.
+- **Rotation**: each lookup starts with the next provider in the list, cycling on successive calls; the rest act as fallbacks. Useful to spread load and avoid rate limits.
+- **Best quality**: queries providers until it has the highest-priority format they can collectively offer, then returns the best result found, instead of stopping at the first hit.
+
+  For example, with format priority `ttml,elrc,lrc,plain` and providers `qqmusic,netease,kugou,lyrics.ovh`, the best achievable format is `elrc` (none of these serve `ttml`). Each provider is queried in turn until one yields `elrc`. A provider is skipped once it cannot beat what has already been fetched (e.g. `lyrics.ovh`, which only serves `plain`, is skipped when an `lrc` result is already in hand). On a tie, the higher provider in the list wins. This makes more requests per lookup in exchange for the best available format.
+
 ## Path variables
 
 Custom paths to write lyrics files to can be composed using path variables.

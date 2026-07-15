@@ -40,6 +40,7 @@ pub enum ProviderMode {
     #[default]
     Priority,
     Rotation,
+    BestQuality,
 }
 
 impl ProviderMode {
@@ -47,6 +48,7 @@ impl ProviderMode {
         match slug.trim().to_ascii_lowercase().as_str() {
             "priority" => Some(ProviderMode::Priority),
             "rotation" => Some(ProviderMode::Rotation),
+            "quality" => Some(ProviderMode::BestQuality),
             _ => None,
         }
     }
@@ -513,6 +515,10 @@ mod tests {
         assert_eq!(
             ProviderMode::from_slug(" Rotation "),
             Some(ProviderMode::Rotation)
+        );
+        assert_eq!(
+            ProviderMode::from_slug("quality"),
+            Some(ProviderMode::BestQuality)
         );
         assert_eq!(ProviderMode::from_slug("foo"), None);
     }
