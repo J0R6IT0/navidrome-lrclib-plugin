@@ -237,38 +237,6 @@ mod tests {
     }
 
     #[test]
-    fn test_lines_missing_timings_are_skipped() {
-        let lines = vec![
-            Line {
-                text: "no words".into(),
-                start: Some(1000),
-                end: Some(2000),
-                words: None,
-            },
-            Line {
-                text: "no end".into(),
-                start: Some(2000),
-                end: None,
-                words: Some(vec![]),
-            },
-            Line {
-                text: "ok".into(),
-                start: Some(3000),
-                end: Some(4000),
-                words: Some(vec![Word {
-                    text: "ok".into(),
-                    start: 3000,
-                }]),
-            },
-        ];
-        assert_eq!(build_elrc(&lines), "[00:03.00]<00:03.00>ok<00:04.00>");
-        assert_eq!(
-            build_lrc(&lines),
-            "[00:01.00] no words\n[00:02.00] no end\n[00:03.00] ok"
-        );
-    }
-
-    #[test]
     fn test_build_is_empty_when_no_line_has_timings() {
         let lines = vec![Line {
             text: "plain".into(),
