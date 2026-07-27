@@ -21,6 +21,8 @@ struct JsonResponse {
 #[derive(Deserialize)]
 struct JsonMeta {
     level: SyncLevel,
+    #[serde(default)]
+    instrumental: bool,
 }
 
 #[derive(Deserialize, PartialEq, Eq, Clone, Copy)]
@@ -93,6 +95,10 @@ impl LyricsProvider for LrcMux {
             200 => {
                 let parsed: JsonResponse = serde_json::from_slice(&response.body)
                     .map_err(|e| Error::new(format!("lrcmux: failed to parse response: {e}")))?;
+
+                if parsed.meta.instrumental {
+                    return Ok(Some(Lyrics::Instrumental));
+                }
 
                 let level = parsed.meta.level;
                 let lines = parsed.lines.unwrap_or_default();
