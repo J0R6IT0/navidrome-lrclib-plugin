@@ -186,16 +186,19 @@ fn format_timestamp(ms: u64) -> String {
 }
 
 fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
-    let hex = hex.trim();
+    let hex = hex.trim().as_bytes();
     if !hex.len().is_multiple_of(2) {
         return Err("qrc payload is not valid hex (odd length)".to_string());
     }
 
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&hex[i..i + 2], 16)
-                .map_err(|_| "qrc payload is not valid hex".to_string())
+    hex.chunks_exact(2)
+        .map(|pair| {
+            let hi = (pair[0] as char).to_digit(16);
+            let lo = (pair[1] as char).to_digit(16);
+            match (hi, lo) {
+                (Some(hi), Some(lo)) => Ok((hi * 16 + lo) as u8),
+                _ => Err("qrc payload is not valid hex".to_string()),
+            }
         })
         .collect()
 }
@@ -580,6 +583,15 @@ mod tests {
     fn test_extract_lyric_content_empty_is_none() {
         let xml = r#"<Lyric_1 LyricType="1" LyricContent=""/>"#;
         assert_eq!(extract_lyric_content(xml), None);
+    }
+
+    #[test]
+    fn test_hex_decode() {
+        assert_eq!(hex_decode("  00ff1a\n").unwrap(), vec![0x00, 0xff, 0x1a]);
+        assert!(hex_decode("abc").is_err());
+        assert!(hex_decode("aéa").is_err());
+        assert!(hex_decode("é").is_err());
+        assert!(hex_decode("zz").is_err());
     }
 
     #[test]

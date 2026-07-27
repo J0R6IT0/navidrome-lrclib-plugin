@@ -103,13 +103,21 @@ impl LyricsProvider for LrcMux {
                             if level != SyncLevel::Word {
                                 continue;
                             }
-                            return Ok(Some(Lyrics::Elrc(build_elrc(&lines))));
+                            let elrc = build_elrc(&lines);
+                            if elrc.is_empty() {
+                                continue;
+                            }
+                            return Ok(Some(Lyrics::Elrc(elrc)));
                         }
                         LyricsKind::Lrc => {
                             if level == SyncLevel::None {
                                 continue;
                             }
-                            return Ok(Some(Lyrics::Lrc(build_lrc(&lines))));
+                            let lrc = build_lrc(&lines);
+                            if lrc.is_empty() {
+                                continue;
+                            }
+                            return Ok(Some(Lyrics::Lrc(lrc)));
                         }
                         LyricsKind::Plain => {
                             let text = lines
@@ -135,13 +143,14 @@ impl LyricsProvider for LrcMux {
 fn build_elrc(lines: &[Line]) -> String {
     lines
         .iter()
-        .map(|l| {
-            let mut buf = format!("[{}]", ms_to_ts(l.start.unwrap()));
-            for w in l.words.as_deref().unwrap() {
+        .filter_map(|l| {
+            let (start, end, words) = (l.start?, l.end?, l.words.as_deref()?);
+            let mut buf = format!("[{}]", ms_to_ts(start));
+            for w in words {
                 buf.push_str(&format!("<{}>{}", ms_to_ts(w.start), w.text));
             }
-            buf.push_str(&format!("<{}>", ms_to_ts(l.end.unwrap())));
-            buf
+            buf.push_str(&format!("<{}>", ms_to_ts(end)));
+            Some(buf)
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -150,7 +159,7 @@ fn build_elrc(lines: &[Line]) -> String {
 fn build_lrc(lines: &[Line]) -> String {
     lines
         .iter()
-        .map(|l| format!("[{}] {}", ms_to_ts(l.start.unwrap()), l.text))
+        .filter_map(|l| Some(format!("[{}] {}", ms_to_ts(l.start?), l.text)))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -225,5 +234,49 @@ mod tests {
             },
         ];
         assert_eq!(build_lrc(&lines), "[00:01.00] first\n[00:02.50] second");
+    }
+
+    #[test]
+    fn test_lines_missing_timings_are_skipped() {
+        let lines = vec![
+            Line {
+                text: "no words".into(),
+                start: Some(1000),
+                end: Some(2000),
+                words: None,
+            },
+            Line {
+                text: "no end".into(),
+                start: Some(2000),
+                end: None,
+                words: Some(vec![]),
+            },
+            Line {
+                text: "ok".into(),
+                start: Some(3000),
+                end: Some(4000),
+                words: Some(vec![Word {
+                    text: "ok".into(),
+                    start: 3000,
+                }]),
+            },
+        ];
+        assert_eq!(build_elrc(&lines), "[00:03.00]<00:03.00>ok<00:04.00>");
+        assert_eq!(
+            build_lrc(&lines),
+            "[00:01.00] no words\n[00:02.00] no end\n[00:03.00] ok"
+        );
+    }
+
+    #[test]
+    fn test_build_is_empty_when_no_line_has_timings() {
+        let lines = vec![Line {
+            text: "plain".into(),
+            start: None,
+            end: None,
+            words: None,
+        }];
+        assert!(build_elrc(&lines).is_empty());
+        assert!(build_lrc(&lines).is_empty());
     }
 }
