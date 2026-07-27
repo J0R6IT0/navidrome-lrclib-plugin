@@ -30,7 +30,7 @@
         "lyricsFormats": {
           "type": "string",
           "title": "Lyrics formats",
-          "default": "ttml,lyricsfile,elrc,lrc,srt,plain",
+          "default": "ttml,elrc,lyricsfile,lrc,srt,plain",
           "description": "Comma-separated list of formats to fetch, ordered by priority. Remove a format to disable it (not recommended unless you have a specific use case). Valid values: lrc, elrc, ttml, srt, lyricsfile, plain."
         },
 
