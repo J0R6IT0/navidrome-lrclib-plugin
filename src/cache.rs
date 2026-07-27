@@ -25,14 +25,12 @@ pub enum CacheLookup {
 }
 
 pub struct LyricsCache {
-    ttl: i64,
     negative_ttl: i64,
 }
 
 impl LyricsCache {
-    pub fn new(ttl_seconds: i64, negative_ttl_seconds: i64) -> Self {
+    pub fn new(negative_ttl_seconds: i64) -> Self {
         Self {
-            ttl: ttl_seconds,
             negative_ttl: negative_ttl_seconds,
         }
     }
@@ -67,7 +65,10 @@ impl LyricsCache {
                 .map_err(|e| LyricsError::new(format!("compression failed: {e}")))?,
         };
 
-        kvstore::set_with_ttl(&cache_key(track_id, lyrics.kind()), bytes, self.ttl)
+        let kind = lyrics.kind();
+        let ttl = cfg.cache_ttl_hours_for(kind).saturating_mul(3600);
+
+        kvstore::set_with_ttl(&cache_key(track_id, kind), bytes, ttl)
             .map_err(|e| LyricsError::new(format!("failed to write to cache: {e}")))?;
 
         Ok(())

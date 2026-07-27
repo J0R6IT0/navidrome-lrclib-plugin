@@ -113,11 +113,7 @@ impl LyricsProvider for AppleMusic {
         &[LyricsKind::Ttml]
     }
 
-    fn fetch_lyrics(
-        &self,
-        track: &TrackInfo,
-        cfg: &PluginConfig,
-    ) -> Result<Option<Lyrics>, Error> {
+    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
         let token = self.media_user_token.as_deref().ok_or_else(|| {
             Error::new(
                 "applemusic: a media-user-token is required, configure it in the provider settings",

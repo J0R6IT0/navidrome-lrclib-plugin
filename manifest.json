@@ -189,6 +189,12 @@
           "default": true
         },
 
+        "perTypeCacheTtl": {
+          "type": "boolean",
+          "title": "Use a separate cache TTL per lyrics type",
+          "default": false
+        },
+
         "cacheTtlHours": {
           "type": "integer",
           "title": "Cache TTL (hours)",
@@ -196,6 +202,69 @@
           "maximum": 1000000,
           "default": 168,
           "description": "How long cached lyrics remain valid. Default is 7 days."
+        },
+
+        "ttmlCacheTtlHours": {
+          "type": "integer",
+          "title": "TTML cache TTL (hours)",
+          "minimum": 1,
+          "maximum": 1000000,
+          "default": 336,
+          "description": "Default is 14 days."
+        },
+
+        "lyricsfileCacheTtlHours": {
+          "type": "integer",
+          "title": "Lyricsfile cache TTL (hours)",
+          "minimum": 1,
+          "maximum": 1000000,
+          "default": 336,
+          "description": "Default is 14 days."
+        },
+
+        "elrcCacheTtlHours": {
+          "type": "integer",
+          "title": "ELRC cache TTL (hours)",
+          "minimum": 1,
+          "maximum": 1000000,
+          "default": 336,
+          "description": "Default is 14 days."
+        },
+
+        "lrcCacheTtlHours": {
+          "type": "integer",
+          "title": "LRC cache TTL (hours)",
+          "minimum": 1,
+          "maximum": 1000000,
+          "default": 168,
+          "description": "Default is 7 days."
+        },
+
+        "srtCacheTtlHours": {
+          "type": "integer",
+          "title": "SRT cache TTL (hours)",
+          "minimum": 1,
+          "maximum": 1000000,
+          "default": 168,
+          "description": "Default is 7 days."
+        },
+
+        "plainCacheTtlHours": {
+          "type": "integer",
+          "title": "Plain cache TTL (hours)",
+          "minimum": 1,
+          "maximum": 1000000,
+          "default": 72,
+          "description": "Default is 3 days."
+        },
+
+        "instrumentalCacheTtlHours": {
+          "type": "integer",
+          "title": "Instrumental cache TTL (hours)",
+          "minimum": 1,
+          "maximum": 1000000,
+          "default": 336,
+          "description": "Default is 14 days."
         },
 
         "negativeCache": {
@@ -433,9 +502,128 @@
               "rule": {
                 "effect": "SHOW",
                 "condition": {
-                  "scope": "#/properties/enableCache",
+                  "scope": "#",
                   "schema": {
-                    "const": true
+                    "properties": {
+                      "enableCache": {
+                        "const": true
+                      },
+                      "perTypeCacheTtl": {
+                        "const": false
+                      }
+                    },
+                    "required": ["enableCache"]
+                  }
+                }
+              }
+            },
+            {
+              "type": "HorizontalLayout",
+              "elements": [
+                {
+                  "type": "Control",
+                  "scope": "#/properties/ttmlCacheTtlHours"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/lyricsfileCacheTtlHours"
+                }
+              ],
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#",
+                  "schema": {
+                    "properties": {
+                      "enableCache": {
+                        "const": true
+                      },
+                      "perTypeCacheTtl": {
+                        "const": true
+                      }
+                    },
+                    "required": ["enableCache", "perTypeCacheTtl"]
+                  }
+                }
+              }
+            },
+            {
+              "type": "HorizontalLayout",
+              "elements": [
+                {
+                  "type": "Control",
+                  "scope": "#/properties/elrcCacheTtlHours"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/lrcCacheTtlHours"
+                }
+              ],
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#",
+                  "schema": {
+                    "properties": {
+                      "enableCache": {
+                        "const": true
+                      },
+                      "perTypeCacheTtl": {
+                        "const": true
+                      }
+                    },
+                    "required": ["enableCache", "perTypeCacheTtl"]
+                  }
+                }
+              }
+            },
+            {
+              "type": "HorizontalLayout",
+              "elements": [
+                {
+                  "type": "Control",
+                  "scope": "#/properties/srtCacheTtlHours"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/plainCacheTtlHours"
+                }
+              ],
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#",
+                  "schema": {
+                    "properties": {
+                      "enableCache": {
+                        "const": true
+                      },
+                      "perTypeCacheTtl": {
+                        "const": true
+                      }
+                    },
+                    "required": ["enableCache", "perTypeCacheTtl"]
+                  }
+                }
+              }
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/instrumentalCacheTtlHours",
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#",
+                  "schema": {
+                    "properties": {
+                      "enableCache": {
+                        "const": true
+                      },
+                      "perTypeCacheTtl": {
+                        "const": true
+                      }
+                    },
+                    "required": ["enableCache", "perTypeCacheTtl"]
                   }
                 }
               }
@@ -470,6 +658,19 @@
                       }
                     },
                     "required": ["enableCache", "negativeCache"]
+                  }
+                }
+              }
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/perTypeCacheTtl",
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#/properties/enableCache",
+                  "schema": {
+                    "const": true
                   }
                 }
               }

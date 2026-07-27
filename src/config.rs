@@ -12,6 +12,14 @@ const DEFAULT_NEGATIVE_CACHE_TTL: i64 = 24;
 const MIN_CACHE_TTL: i64 = 1;
 const MAX_CACHE_TTL: i64 = 1_000_000;
 
+const DEFAULT_TTML_CACHE_TTL: i64 = 336;
+const DEFAULT_LYRICSFILE_CACHE_TTL: i64 = 336;
+const DEFAULT_ELRC_CACHE_TTL: i64 = 336;
+const DEFAULT_LRC_CACHE_TTL: i64 = 168;
+const DEFAULT_SRT_CACHE_TTL: i64 = 168;
+const DEFAULT_PLAIN_CACHE_TTL: i64 = 72;
+const DEFAULT_INSTRUMENTAL_CACHE_TTL: i64 = 336;
+
 const DEFAULT_PLAIN_EXTENSION: &str = "txt";
 const DEFAULT_INSTRUMENTAL_EXTENSION: &str = "txt";
 
@@ -50,6 +58,45 @@ impl ProviderMode {
             "rotation" => Some(ProviderMode::Rotation),
             "quality" => Some(ProviderMode::BestQuality),
             _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TypeCacheTtls {
+    pub plain: i64,
+    pub lrc: i64,
+    pub elrc: i64,
+    pub ttml: i64,
+    pub srt: i64,
+    pub lyricsfile: i64,
+    pub instrumental: i64,
+}
+
+impl TypeCacheTtls {
+    pub fn get(&self, kind: LyricsKind) -> i64 {
+        match kind {
+            LyricsKind::Plain => self.plain,
+            LyricsKind::Lrc => self.lrc,
+            LyricsKind::Elrc => self.elrc,
+            LyricsKind::Ttml => self.ttml,
+            LyricsKind::Srt => self.srt,
+            LyricsKind::Lyricsfile => self.lyricsfile,
+            LyricsKind::Instrumental => self.instrumental,
+        }
+    }
+}
+
+impl Default for TypeCacheTtls {
+    fn default() -> Self {
+        Self {
+            plain: DEFAULT_PLAIN_CACHE_TTL,
+            lrc: DEFAULT_LRC_CACHE_TTL,
+            elrc: DEFAULT_ELRC_CACHE_TTL,
+            ttml: DEFAULT_TTML_CACHE_TTL,
+            srt: DEFAULT_SRT_CACHE_TTL,
+            lyricsfile: DEFAULT_LYRICSFILE_CACHE_TTL,
+            instrumental: DEFAULT_INSTRUMENTAL_CACHE_TTL,
         }
     }
 }
@@ -114,7 +161,9 @@ pub struct PluginConfig {
     pub plain_extension: String,
     pub instrumental_extension: String,
     pub enable_cache: bool,
+    pub per_type_cache_ttl: bool,
     pub cache_ttl_hours: i64,
+    pub type_cache_ttl_hours: TypeCacheTtls,
     pub negative_cache: bool,
     pub negative_cache_ttl_hours: i64,
     pub providers: Vec<ProviderEntry>,
@@ -136,7 +185,9 @@ impl Default for PluginConfig {
             plain_extension: DEFAULT_PLAIN_EXTENSION.to_string(),
             instrumental_extension: DEFAULT_INSTRUMENTAL_EXTENSION.to_string(),
             enable_cache: true,
+            per_type_cache_ttl: false,
             cache_ttl_hours: DEFAULT_CACHE_TTL,
+            type_cache_ttl_hours: TypeCacheTtls::default(),
             negative_cache: true,
             negative_cache_ttl_hours: DEFAULT_NEGATIVE_CACHE_TTL,
             providers: vec![],
@@ -163,7 +214,9 @@ impl PluginConfig {
                 DEFAULT_INSTRUMENTAL_EXTENSION,
             )?,
             enable_cache: get_bool("enableCache", true)?,
+            per_type_cache_ttl: get_bool("perTypeCacheTtl", false)?,
             cache_ttl_hours: resolve_cache_ttl()?,
+            type_cache_ttl_hours: resolve_type_cache_ttls()?,
             negative_cache: get_bool("negativeCache", true)?,
             negative_cache_ttl_hours: resolve_negative_cache_ttl()?,
             providers: resolve_providers()?,
@@ -187,6 +240,14 @@ impl PluginConfig {
 
     pub fn wants(&self, kind: LyricsKind) -> bool {
         self.lyrics_type_priority.contains(&kind)
+    }
+
+    pub fn cache_ttl_hours_for(&self, kind: LyricsKind) -> i64 {
+        if self.per_type_cache_ttl {
+            self.type_cache_ttl_hours.get(kind)
+        } else {
+            self.cache_ttl_hours
+        }
     }
 
     pub fn duration_tolerance_ms(&self) -> u64 {
@@ -248,17 +309,27 @@ fn resolve_extension(key: &str, default_value: &str) -> Result<String, LyricsErr
 }
 
 fn resolve_cache_ttl() -> Result<i64, LyricsError> {
-    Ok(clamp_cache_ttl(
-        "cacheTtlHours",
-        get_i64("cacheTtlHours", DEFAULT_CACHE_TTL)?,
-    ))
+    resolve_ttl("cacheTtlHours", DEFAULT_CACHE_TTL)
+}
+
+fn resolve_type_cache_ttls() -> Result<TypeCacheTtls, LyricsError> {
+    Ok(TypeCacheTtls {
+        plain: resolve_ttl("plainCacheTtlHours", DEFAULT_PLAIN_CACHE_TTL)?,
+        lrc: resolve_ttl("lrcCacheTtlHours", DEFAULT_LRC_CACHE_TTL)?,
+        elrc: resolve_ttl("elrcCacheTtlHours", DEFAULT_ELRC_CACHE_TTL)?,
+        ttml: resolve_ttl("ttmlCacheTtlHours", DEFAULT_TTML_CACHE_TTL)?,
+        srt: resolve_ttl("srtCacheTtlHours", DEFAULT_SRT_CACHE_TTL)?,
+        lyricsfile: resolve_ttl("lyricsfileCacheTtlHours", DEFAULT_LYRICSFILE_CACHE_TTL)?,
+        instrumental: resolve_ttl("instrumentalCacheTtlHours", DEFAULT_INSTRUMENTAL_CACHE_TTL)?,
+    })
+}
+
+fn resolve_ttl(key: &str, default_value: i64) -> Result<i64, LyricsError> {
+    Ok(clamp_cache_ttl(key, get_i64(key, default_value)?))
 }
 
 fn resolve_negative_cache_ttl() -> Result<i64, LyricsError> {
-    Ok(clamp_cache_ttl(
-        "negativeCacheTtlHours",
-        get_i64("negativeCacheTtlHours", DEFAULT_NEGATIVE_CACHE_TTL)?,
-    ))
+    resolve_ttl("negativeCacheTtlHours", DEFAULT_NEGATIVE_CACHE_TTL)
 }
 
 fn clamp_cache_ttl(key: &str, raw: i64) -> i64 {
@@ -526,6 +597,58 @@ mod tests {
     #[test]
     fn test_provider_mode_default_is_priority() {
         assert_eq!(ProviderMode::default(), ProviderMode::Priority);
+    }
+
+    #[test]
+    fn test_per_type_cache_ttl_defaults_to_off() {
+        assert!(!PluginConfig::default().per_type_cache_ttl);
+    }
+
+    #[test]
+    fn test_cache_ttl_hours_for_global_mode_ignores_type_ttls() {
+        let cfg = PluginConfig {
+            per_type_cache_ttl: false,
+            cache_ttl_hours: 168,
+            ..PluginConfig::default()
+        };
+
+        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Ttml), 168);
+        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Plain), 168);
+    }
+
+    #[test]
+    fn test_cache_ttl_hours_for_per_type_mode() {
+        let cfg = PluginConfig {
+            per_type_cache_ttl: true,
+            cache_ttl_hours: 168,
+            type_cache_ttl_hours: TypeCacheTtls {
+                plain: 1,
+                lrc: 2,
+                elrc: 3,
+                ttml: 4,
+                srt: 5,
+                lyricsfile: 6,
+                instrumental: 7,
+            },
+            ..PluginConfig::default()
+        };
+
+        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Plain), 1);
+        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Lrc), 2);
+        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Elrc), 3);
+        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Ttml), 4);
+        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Srt), 5);
+        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Lyricsfile), 6);
+        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Instrumental), 7);
+    }
+
+    #[test]
+    fn test_default_type_ttls_favour_synced_formats() {
+        let ttls = TypeCacheTtls::default();
+
+        assert!(ttls.ttml > ttls.lrc);
+        assert!(ttls.elrc > ttls.lrc);
+        assert!(ttls.lrc > ttls.plain);
     }
 
     #[test]

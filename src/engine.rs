@@ -33,12 +33,8 @@ pub fn get_lyrics(track: TrackInfo) -> Result<GetLyricsResponse, LyricsError> {
 }
 
 fn build_cache(cfg: &PluginConfig) -> Option<LyricsCache> {
-    cfg.enable_cache.then(|| {
-        LyricsCache::new(
-            cfg.cache_ttl_hours.saturating_mul(3600),
-            cfg.negative_cache_ttl_hours.saturating_mul(3600),
-        )
-    })
+    cfg.enable_cache
+        .then(|| LyricsCache::new(cfg.negative_cache_ttl_hours.saturating_mul(3600)))
 }
 
 fn lookup_cache(
@@ -79,7 +75,7 @@ fn save(cache: &Option<LyricsCache>, track_id: &str, lyrics: &Lyrics, cfg: &Plug
             Ok(()) => info!(
                 "cached {} lyrics for track '{track_id}' (ttl {}h)",
                 lyrics.kind().slug(),
-                cfg.cache_ttl_hours
+                cfg.cache_ttl_hours_for(lyrics.kind())
             ),
             Err(err) => warn!("failed to persist lyrics to cache: {err}"),
         }

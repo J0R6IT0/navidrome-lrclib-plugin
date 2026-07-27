@@ -140,11 +140,7 @@ impl LyricsProvider for Kugou {
     }
 }
 
-fn find_song(
-    keyword: &str,
-    target_ms: u64,
-    tolerance_ms: u64,
-) -> Result<Option<SongInfo>, Error> {
+fn find_song(keyword: &str, target_ms: u64, tolerance_ms: u64) -> Result<Option<SongInfo>, Error> {
     let query = serde_urlencoded::to_string([
         ("format", "json"),
         ("keyword", keyword),
