@@ -5,7 +5,10 @@ use crate::{
 use extism_pdk::warn;
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
 use nd_pdk::{host::kvstore, lyrics::Error as LyricsError};
-use std::io::{Read, Write};
+use std::{
+    io::{Read, Write},
+    rc::Rc,
+};
 
 const PREFIX_NEGATIVE: &str = "miss:";
 
@@ -25,18 +28,16 @@ pub enum CacheLookup {
 }
 
 pub struct LyricsCache {
-    negative_ttl: i64,
+    cfg: Rc<PluginConfig>,
 }
 
 impl LyricsCache {
-    pub fn new(negative_ttl_seconds: i64) -> Self {
-        Self {
-            negative_ttl: negative_ttl_seconds,
-        }
+    pub fn new(cfg: Rc<PluginConfig>) -> Self {
+        Self { cfg }
     }
 
-    pub fn lookup(&self, track_id: &str, cfg: &PluginConfig) -> CacheLookup {
-        if let Some(lyrics) = self.read(track_id, cfg) {
+    pub fn lookup(&self, track_id: &str) -> CacheLookup {
+        if let Some(lyrics) = self.read(track_id) {
             return CacheLookup::Found(lyrics);
         }
 
@@ -47,26 +48,22 @@ impl LyricsCache {
         CacheLookup::Miss
     }
 
-    fn read(&self, track_id: &str, cfg: &PluginConfig) -> Option<Lyrics> {
-        cfg.resolve_order()
+    fn read(&self, track_id: &str) -> Option<Lyrics> {
+        self.cfg
+            .resolve_order()
             .iter()
             .find_map(|&kind| self.get(track_id, kind))
     }
 
-    pub fn write(
-        &self,
-        track_id: &str,
-        lyrics: &Lyrics,
-        cfg: &PluginConfig,
-    ) -> Result<(), LyricsError> {
+    pub fn write(&self, track_id: &str, lyrics: &Lyrics) -> Result<(), LyricsError> {
         let bytes = match lyrics {
             Lyrics::Instrumental => SENTINEL.to_vec(),
-            _ => compress(lyrics.text(cfg).as_bytes())
+            _ => compress(lyrics.text(&self.cfg).as_bytes())
                 .map_err(|e| LyricsError::new(format!("compression failed: {e}")))?,
         };
 
         let kind = lyrics.kind();
-        let ttl = cfg.cache_ttl_hours_for(kind).saturating_mul(3600);
+        let ttl = self.cfg.cache_ttl_hours_for(kind).saturating_mul(3600);
 
         kvstore::set_with_ttl(&cache_key(track_id, kind), bytes, ttl)
             .map_err(|e| LyricsError::new(format!("failed to write to cache: {e}")))?;
@@ -92,7 +89,7 @@ impl LyricsCache {
         kvstore::set_with_ttl(
             &negative_cache_key(track_id, provider),
             SENTINEL.to_vec(),
-            self.negative_ttl,
+            self.cfg.negative_cache_ttl_hours.saturating_mul(3600),
         )
         .map_err(|e| LyricsError::new(format!("failed to write negative cache entry: {e}")))
     }

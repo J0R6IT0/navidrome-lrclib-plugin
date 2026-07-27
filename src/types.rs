@@ -2,6 +2,7 @@ use crate::{
     config::PluginConfig,
     format::{self, lrc},
 };
+use nd_pdk::lyrics::{GetLyricsResponse, LyricsText};
 use std::borrow::Cow;
 
 #[derive(PartialEq, Debug)]
@@ -66,6 +67,15 @@ impl Lyrics {
             | Lyrics::Srt(s)
             | Lyrics::Lyricsfile(s) => s.trim().is_empty(),
             Lyrics::Instrumental => false,
+        }
+    }
+
+    pub fn to_response(&self, cfg: &PluginConfig) -> GetLyricsResponse {
+        GetLyricsResponse {
+            lyrics: vec![LyricsText {
+                lang: "xxx".into(),
+                text: self.text(cfg).into_owned(),
+            }],
         }
     }
 }

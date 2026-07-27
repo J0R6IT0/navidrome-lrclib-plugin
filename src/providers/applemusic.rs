@@ -1,5 +1,6 @@
 use crate::{
     config::{PluginConfig, ProviderParams},
+    ext::TrackInfoExt,
     providers::{BROWSER_USER_AGENT, LyricsProvider},
     types::{Lyrics, LyricsKind},
 };
@@ -121,11 +122,8 @@ impl LyricsProvider for AppleMusic {
         })?;
 
         let first_artist = track
-            .artists
-            .first()
-            .ok_or_else(|| Error::new("missing artist"))?
-            .name
-            .as_str();
+            .first_artist()
+            .ok_or_else(|| Error::new("missing artist"))?;
 
         let query = format!("{} {first_artist}", track.title);
         let target_ms = (track.duration * 1000.0).round() as u64;

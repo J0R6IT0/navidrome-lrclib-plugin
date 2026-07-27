@@ -1,5 +1,6 @@
 use crate::{
     config::{PluginConfig, ProviderParams},
+    ext::TrackInfoExt,
     providers::{LyricsProvider, USER_AGENT},
     types::{Lyrics, LyricsKind},
 };
@@ -61,11 +62,8 @@ impl LyricsProvider for Lrclib {
         cfg: &PluginConfig,
     ) -> Result<Option<Lyrics>, LyricsError> {
         let first_artist = track
-            .artists
-            .first()
-            .ok_or_else(|| LyricsError::new("missing artist"))?
-            .name
-            .as_str();
+            .first_artist()
+            .ok_or_else(|| LyricsError::new("missing artist"))?;
 
         let all_artists = track
             .artists

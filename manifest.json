@@ -218,8 +218,8 @@
           "title": "Lyricsfile cache TTL (hours)",
           "minimum": 1,
           "maximum": 1000000,
-          "default": 336,
-          "description": "Default is 14 days."
+          "default": 168,
+          "description": "Default is 7 days."
         },
 
         "elrcCacheTtlHours": {

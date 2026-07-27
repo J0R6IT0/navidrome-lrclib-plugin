@@ -1,5 +1,6 @@
 use crate::{
     config::{PluginConfig, ProviderParams},
+    ext::TrackInfoExt,
     providers::{LyricsProvider, USER_AGENT},
     types::{Lyrics, LyricsKind},
 };
@@ -48,11 +49,8 @@ impl LyricsProvider for LyricsOvh {
         _cfg: &PluginConfig,
     ) -> Result<Option<Lyrics>, Error> {
         let first_artist = track
-            .artists
-            .first()
-            .ok_or_else(|| Error::new("missing artist"))?
-            .name
-            .as_str();
+            .first_artist()
+            .ok_or_else(|| Error::new("missing artist"))?;
 
         let url = build_search_url(&self.base_url, first_artist, &track.title);
         let response = send_request(&url)?;

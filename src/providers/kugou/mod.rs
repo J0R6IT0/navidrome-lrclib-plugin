@@ -1,5 +1,6 @@
 use crate::{
     config::{PluginConfig, ProviderParams},
+    ext::TrackInfoExt,
     format::lrc,
     providers::{BROWSER_USER_AGENT, LyricsProvider},
     types::{Lyrics, LyricsKind},
@@ -78,11 +79,8 @@ impl LyricsProvider for Kugou {
 
     fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
         let first_artist = track
-            .artists
-            .first()
-            .ok_or_else(|| Error::new("missing artist"))?
-            .name
-            .as_str();
+            .first_artist()
+            .ok_or_else(|| Error::new("missing artist"))?;
 
         let keyword = format!("{} {first_artist}", track.title);
         let target_ms = (track.duration * 1000.0).round() as u64;

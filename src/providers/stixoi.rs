@@ -1,5 +1,6 @@
 use crate::{
     config::{PluginConfig, ProviderParams},
+    ext::TrackInfoExt,
     providers::{BROWSER_USER_AGENT, LyricsProvider},
     types::{Lyrics, LyricsKind},
 };
@@ -64,11 +65,7 @@ impl LyricsProvider for Stixoi {
             return Ok(None);
         }
 
-        let artist = track
-            .artists
-            .first()
-            .map(|a| a.name.as_str())
-            .unwrap_or_default();
+        let artist = track.first_artist().unwrap_or_default();
 
         let combined = if artist.is_empty() {
             title.clone()

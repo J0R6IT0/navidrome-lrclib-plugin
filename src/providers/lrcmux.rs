@@ -1,5 +1,6 @@
 use crate::{
     config::{PluginConfig, ProviderParams},
+    ext::TrackInfoExt,
     providers::{LyricsProvider, USER_AGENT},
     types::{Lyrics, LyricsKind},
 };
@@ -71,11 +72,8 @@ impl LyricsProvider for LrcMux {
 
     fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
         let first_artist = track
-            .artists
-            .first()
-            .ok_or_else(|| Error::new("missing artist"))?
-            .name
-            .as_str();
+            .first_artist()
+            .ok_or_else(|| Error::new("missing artist"))?;
 
         let duration = track.duration.round() as i64;
 

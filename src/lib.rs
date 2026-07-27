@@ -5,6 +5,7 @@ use nd_pdk::lyrics::{
 mod cache;
 mod config;
 mod engine;
+mod ext;
 mod fetch;
 mod format;
 mod providers;
