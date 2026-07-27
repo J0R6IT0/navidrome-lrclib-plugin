@@ -147,7 +147,7 @@ impl LyricsProvider for QQMusic {
             return Ok(Some(Lyrics::Instrumental));
         }
 
-        for &kind in cfg.resolve_order() {
+        for &kind in &cfg.lyrics_type_priority {
             match kind {
                 LyricsKind::Elrc if is_qrc => {
                     let elrc = qrc::to_enhanced_lrc(&content);

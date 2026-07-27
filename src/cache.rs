@@ -50,7 +50,7 @@ impl LyricsCache {
 
     fn read(&self, track_id: &str) -> Option<Lyrics> {
         self.cfg
-            .resolve_order()
+            .lyrics_type_priority
             .iter()
             .find_map(|&kind| self.get(track_id, kind))
     }

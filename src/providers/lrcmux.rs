@@ -95,7 +95,7 @@ impl LyricsProvider for LrcMux {
                 let level = parsed.meta.level;
                 let lines = parsed.lines.unwrap_or_default();
 
-                for &kind in cfg.resolve_order() {
+                for &kind in &cfg.lyrics_type_priority {
                     match kind {
                         LyricsKind::Elrc => {
                             if level != SyncLevel::Word {

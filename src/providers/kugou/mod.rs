@@ -104,7 +104,7 @@ impl LyricsProvider for Kugou {
             None => return Ok(None),
         };
 
-        for &kind in cfg.resolve_order() {
+        for &kind in &cfg.lyrics_type_priority {
             match kind {
                 LyricsKind::Elrc if candidate.krctype != 0 => {
                     let bytes = download_raw(&candidate.id, &candidate.accesskey, "krc")?;

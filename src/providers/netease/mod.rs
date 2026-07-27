@@ -98,7 +98,7 @@ impl LyricsProvider for NetEase {
 
         let lrc = LyricContent::text(&response.lrc).map(strip_metadata);
 
-        for &kind in cfg.resolve_order() {
+        for &kind in &cfg.lyrics_type_priority {
             match kind {
                 LyricsKind::Elrc => {
                     if let Some(raw) = LyricContent::text(&response.yrc) {

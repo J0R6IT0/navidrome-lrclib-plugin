@@ -177,7 +177,7 @@ fn pick_text(record: LrclibRecord, cfg: &PluginConfig) -> Option<Lyrics> {
         return Some(Lyrics::Instrumental);
     }
 
-    pick_kinds(record, cfg.resolve_order())
+    pick_kinds(record, &cfg.lyrics_type_priority)
 }
 
 fn pick_kinds(record: LrclibRecord, order: &[LyricsKind]) -> Option<Lyrics> {
@@ -195,7 +195,7 @@ fn pick_kinds(record: LrclibRecord, order: &[LyricsKind]) -> Option<Lyrics> {
 }
 
 fn preferred_over_plain(cfg: &PluginConfig) -> Vec<LyricsKind> {
-    let order = cfg.resolve_order();
+    let order = &cfg.lyrics_type_priority;
     let cutoff = order
         .iter()
         .position(|&k| k == LyricsKind::Plain)

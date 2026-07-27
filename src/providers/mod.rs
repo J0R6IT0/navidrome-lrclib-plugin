@@ -44,6 +44,7 @@ pub trait LyricsProvider {
     fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error>;
 
     /// Configuration parameters worth including in logs, as `(key, value)` pairs.
+    /// Never return a token, cookie or any other credential here.
     fn log_params(&self) -> Vec<(&'static str, String)> {
         Vec::new()
     }

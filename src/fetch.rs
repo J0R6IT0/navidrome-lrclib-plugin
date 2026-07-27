@@ -13,7 +13,7 @@ pub enum Outcome {
     ProviderError,
 }
 
-pub fn run(track: &TrackInfo, cfg: &PluginConfig, cache: &Option<LyricsCache>) -> Outcome {
+pub fn run(track: &TrackInfo, cfg: &PluginConfig, cache: Option<&LyricsCache>) -> Outcome {
     let mut registry = ProviderRegistry::new();
     register_providers(&mut registry);
 
@@ -21,7 +21,7 @@ pub fn run(track: &TrackInfo, cfg: &PluginConfig, cache: &Option<LyricsCache>) -
         registry: &registry,
         track,
         cfg,
-        negative_cache: cfg.negative_cache.then_some(cache.as_ref()).flatten(),
+        negative_cache: cfg.negative_cache.then_some(cache).flatten(),
     }
     .run()
 }
@@ -60,7 +60,7 @@ impl Orchestrator<'_> {
     }
 
     fn best_quality(&self) -> Outcome {
-        let priority = self.cfg.resolve_order();
+        let priority = &self.cfg.lyrics_type_priority;
         let mut best: Option<Lyrics> = None;
         let mut best_rank = usize::MAX;
         let mut had_error = false;
