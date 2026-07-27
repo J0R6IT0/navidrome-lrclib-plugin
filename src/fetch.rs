@@ -21,7 +21,7 @@ pub fn run(track: &TrackInfo, cfg: &PluginConfig, cache: &Option<LyricsCache>) -
         registry: &registry,
         track,
         cfg,
-        cache,
+        negative_cache: cfg.negative_cache.then_some(cache.as_ref()).flatten(),
     }
     .run()
 }
@@ -30,7 +30,7 @@ struct Orchestrator<'a> {
     registry: &'a ProviderRegistry,
     track: &'a TrackInfo,
     cfg: &'a PluginConfig,
-    cache: &'a Option<LyricsCache>,
+    negative_cache: Option<&'a LyricsCache>,
 }
 
 impl Orchestrator<'_> {
@@ -180,24 +180,21 @@ impl Orchestrator<'_> {
     }
 
     fn is_negative(&self, provider_id: &str) -> bool {
-        self.cache
-            .as_ref()
+        self.negative_cache
             .is_some_and(|cache| cache.is_negative(&self.track.id, provider_id))
     }
 
     fn mark_negative(&self, provider_id: &str) {
-        if !self.cfg.negative_cache {
+        let Some(cache) = self.negative_cache else {
             return;
-        }
+        };
 
-        if let Some(cache) = self.cache {
-            match cache.write_negative(&self.track.id, provider_id) {
-                Ok(()) => info!(
-                    "cached negative result for track '{}' (provider {provider_id}, ttl {}h)",
-                    self.track.id, self.cfg.negative_cache_ttl_hours
-                ),
-                Err(err) => warn!("failed to persist negative cache entry: {err}"),
-            }
+        match cache.write_negative(&self.track.id, provider_id) {
+            Ok(()) => info!(
+                "cached negative result for track '{}' (provider {provider_id}, ttl {}h)",
+                self.track.id, self.cfg.negative_cache_ttl_hours
+            ),
+            Err(err) => warn!("failed to persist negative cache entry: {err}"),
         }
     }
 }
