@@ -1,6 +1,8 @@
 use regex::Regex;
 
 pub mod lrc;
+pub mod lyricsfile;
+pub mod ttml;
 
 pub fn strip_section_labels(lyrics: &str) -> String {
     let re = Regex::new(

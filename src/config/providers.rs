@@ -18,7 +18,8 @@ pub enum ProviderMode {
     #[default]
     Priority,
     Rotation,
-    BestQuality,
+    TypePriority,
+    BestSyncLevel,
 }
 
 impl ProviderMode {
@@ -26,7 +27,8 @@ impl ProviderMode {
         match self {
             ProviderMode::Priority => "priority",
             ProviderMode::Rotation => "rotation",
-            ProviderMode::BestQuality => "quality",
+            ProviderMode::TypePriority => "type",
+            ProviderMode::BestSyncLevel => "sync",
         }
     }
 
@@ -34,7 +36,8 @@ impl ProviderMode {
         match slug.trim().to_ascii_lowercase().as_str() {
             "priority" => Some(ProviderMode::Priority),
             "rotation" => Some(ProviderMode::Rotation),
-            "quality" => Some(ProviderMode::BestQuality),
+            "type" => Some(ProviderMode::TypePriority),
+            "sync" => Some(ProviderMode::BestSyncLevel),
             _ => None,
         }
     }
@@ -169,8 +172,12 @@ mod tests {
             Some(ProviderMode::Rotation)
         );
         assert_eq!(
-            ProviderMode::from_slug("quality"),
-            Some(ProviderMode::BestQuality)
+            ProviderMode::from_slug("Type"),
+            Some(ProviderMode::TypePriority)
+        );
+        assert_eq!(
+            ProviderMode::from_slug(" Sync "),
+            Some(ProviderMode::BestSyncLevel)
         );
         assert_eq!(ProviderMode::from_slug("foo"), None);
     }
@@ -180,7 +187,8 @@ mod tests {
         for mode in [
             ProviderMode::Priority,
             ProviderMode::Rotation,
-            ProviderMode::BestQuality,
+            ProviderMode::TypePriority,
+            ProviderMode::BestSyncLevel,
         ] {
             assert_eq!(ProviderMode::from_slug(mode.slug()), Some(mode));
         }

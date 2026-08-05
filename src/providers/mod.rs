@@ -4,7 +4,6 @@ use crate::{
         applemusic::AppleMusic, kugou::Kugou, lrclib::Lrclib, lrcmux::LrcMux, lyricsovh::LyricsOvh,
         netease::NetEase, qqmusic::QQMusic, stixoi::Stixoi,
     },
-    registry::ProviderRegistry,
     types::{Lyrics, LyricsKind},
 };
 use nd_pdk::lyrics::{Error, TrackInfo};
@@ -16,7 +15,10 @@ mod lrcmux;
 mod lyricsovh;
 mod netease;
 mod qqmusic;
+mod registry;
 mod stixoi;
+
+pub use registry::ProviderRegistry;
 
 const USER_AGENT: &str = concat!(
     "navidrome-lyrics-plugin/",

@@ -179,7 +179,8 @@
           "oneOf": [
             { "const": "priority", "title": "Priority" },
             { "const": "rotation", "title": "Rotation" },
-            { "const": "quality", "title": "Best quality" }
+            { "const": "type", "title": "Type priority" },
+            { "const": "sync", "title": "Best sync level" }
           ]
         },
 
@@ -388,7 +389,11 @@
             },
             {
               "type": "Label",
-              "text": "• Best quality: keeps querying providers until it has the highest-priority format they can offer, then returns the best result. Skips providers that cannot beat what is already fetched. Ties go to the higher provider. More requests per lookup."
+              "text": "• Type priority: keeps querying providers until it has the highest-priority format they can offer, then returns the best result. Skips providers that cannot beat what is already fetched. Ties go to the higher provider. More requests per lookup."
+            },
+            {
+              "type": "Label",
+              "text": "• Best sync level: same as type priority, but ranks results by their sync level (word-by-word > line-by-line > plain). More requests per lookup."
             },
             {
               "type": "Control",

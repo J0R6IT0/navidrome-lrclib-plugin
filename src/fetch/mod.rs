@@ -1,11 +1,13 @@
 use crate::cache::LyricsCache;
 use crate::config::{PluginConfig, ProviderEntry, ProviderMode};
-use crate::providers::{LyricsProvider, register_providers};
-use crate::registry::ProviderRegistry;
-use crate::selection;
-use crate::types::{Lyrics, LyricsKind};
+use crate::providers::{LyricsProvider, ProviderRegistry, register_providers};
+use crate::types::Lyrics;
 use extism_pdk::{info, warn};
 use nd_pdk::lyrics::TrackInfo;
+use ranking::Ranker;
+
+mod ranking;
+mod selection;
 
 pub enum Outcome {
     Found(Lyrics),
@@ -35,8 +37,11 @@ struct Orchestrator<'a> {
 
 impl Orchestrator<'_> {
     fn run(&self) -> Outcome {
+        let priority = &self.cfg.lyrics_type_priority;
+
         match self.cfg.provider_mode {
-            ProviderMode::BestQuality => self.best_quality(),
+            ProviderMode::TypePriority => self.best_of(Ranker::TypePriority(priority)),
+            ProviderMode::BestSyncLevel => self.best_of(Ranker::SyncLevel(priority)),
             ProviderMode::Priority | ProviderMode::Rotation => self.sequential(),
         }
     }
@@ -59,27 +64,23 @@ impl Orchestrator<'_> {
         outcome_without_lyrics(had_error)
     }
 
-    fn best_quality(&self) -> Outcome {
-        let priority = &self.cfg.lyrics_type_priority;
+    fn best_of(&self, ranker: Ranker) -> Outcome {
         let mut best: Option<Lyrics> = None;
         let mut best_rank = usize::MAX;
         let mut had_error = false;
 
-        for entry in &self.cfg.providers {
+        for entry in selection::order_providers(self.cfg) {
             let Some(prepared) = self.prepare(entry) else {
                 continue;
             };
 
-            let ceiling = best_rank_for(prepared.provider.supported_kinds(), priority);
+            let ceiling = ranker.ceiling(prepared.provider.supported_kinds());
             if ceiling.is_some_and(|rank| rank >= best_rank) {
                 info!(
                     "skipping provider '{}': best possible ({}) cannot improve on current {} lyrics",
                     prepared.label,
-                    ceiling
-                        .and_then(|rank| priority.get(rank))
-                        .map(LyricsKind::slug)
-                        .unwrap_or("none"),
-                    best.as_ref().map(|l| l.kind().slug()).unwrap_or("none"),
+                    ceiling.map_or("none", |rank| ranker.describe_rank(rank)),
+                    ranker.describe_rank(best_rank),
                 );
                 continue;
             }
@@ -90,7 +91,7 @@ impl Orchestrator<'_> {
                         return Outcome::Found(lyrics);
                     }
 
-                    let rank = kind_rank(lyrics.kind(), priority);
+                    let rank = ranker.rank(&lyrics);
                     if best.is_none() || rank < best_rank {
                         best_rank = rank;
                         best = Some(lyrics);
@@ -219,21 +220,6 @@ enum ProviderFetch {
     Error,
 }
 
-fn kind_rank(kind: LyricsKind, priority: &[LyricsKind]) -> usize {
-    priority
-        .iter()
-        .position(|&k| k == kind)
-        .unwrap_or(usize::MAX)
-}
-
-fn best_rank_for(kinds: &[LyricsKind], priority: &[LyricsKind]) -> Option<usize> {
-    kinds
-        .iter()
-        .map(|&kind| kind_rank(kind, priority))
-        .filter(|&rank| rank != usize::MAX)
-        .min()
-}
-
 fn provider_label(name: &str, params: &[(&'static str, String)]) -> String {
     if params.is_empty() {
         return name.to_string();
@@ -251,40 +237,6 @@ fn provider_label(name: &str, params: &[(&'static str, String)]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::LyricsKind::{Elrc, Lrc, Plain, Srt, Ttml};
-
-    #[test]
-    fn test_kind_rank_orders_by_priority() {
-        let priority = [Ttml, Elrc, Lrc, Plain];
-        assert_eq!(kind_rank(Ttml, &priority), 0);
-        assert_eq!(kind_rank(Elrc, &priority), 1);
-        assert_eq!(kind_rank(Plain, &priority), 3);
-    }
-
-    #[test]
-    fn test_kind_rank_absent_is_max() {
-        let priority = [Lrc, Plain];
-        assert_eq!(kind_rank(Ttml, &priority), usize::MAX);
-    }
-
-    #[test]
-    fn test_best_rank_for_picks_highest_supported() {
-        let priority = [Ttml, Elrc, Lrc, Plain];
-        assert_eq!(best_rank_for(&[Lrc, Elrc], &priority), Some(1));
-        assert_eq!(best_rank_for(&[Plain], &priority), Some(3));
-    }
-
-    #[test]
-    fn test_best_rank_for_none_when_nothing_wanted() {
-        let priority = [Lrc, Plain];
-        assert_eq!(best_rank_for(&[Srt], &priority), None);
-    }
-
-    #[test]
-    fn test_best_rank_for_ignores_unwanted_kinds() {
-        let priority = [Lrc, Plain];
-        assert_eq!(best_rank_for(&[Srt, Lrc], &priority), Some(0));
-    }
 
     #[test]
     fn test_provider_label_without_params() {

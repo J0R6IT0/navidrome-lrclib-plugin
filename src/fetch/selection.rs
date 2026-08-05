@@ -6,9 +6,11 @@ const ROTATION_KEY: &str = "rotation:cursor";
 
 const ROTATION_TTL_SECONDS: i64 = 3600;
 
-pub fn order_providers(cfg: &PluginConfig) -> Vec<&ProviderEntry> {
+pub(super) fn order_providers(cfg: &PluginConfig) -> Vec<&ProviderEntry> {
     match cfg.provider_mode {
-        ProviderMode::Priority | ProviderMode::BestQuality => cfg.providers.iter().collect(),
+        ProviderMode::Priority | ProviderMode::TypePriority | ProviderMode::BestSyncLevel => {
+            cfg.providers.iter().collect()
+        }
         ProviderMode::Rotation => rotate(&cfg.providers),
     }
 }

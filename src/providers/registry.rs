@@ -1,5 +1,5 @@
+use super::LyricsProvider;
 use crate::config::{ProviderEntry, ProviderParams};
-use crate::providers::LyricsProvider;
 use std::collections::HashMap;
 
 type ProviderFactory = fn(&ProviderParams) -> Box<dyn LyricsProvider>;

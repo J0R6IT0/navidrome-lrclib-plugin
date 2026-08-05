@@ -9,8 +9,6 @@ mod ext;
 mod fetch;
 mod format;
 mod providers;
-mod registry;
-mod selection;
 mod types;
 mod writing;
 

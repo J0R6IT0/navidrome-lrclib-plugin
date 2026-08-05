@@ -1,6 +1,6 @@
 use crate::{
     config::PluginConfig,
-    format::{self, lrc},
+    format::{self, lrc, lyricsfile, ttml},
 };
 use nd_pdk::lyrics::{GetLyricsResponse, LyricsText};
 use std::borrow::Cow;
@@ -26,6 +26,16 @@ impl Lyrics {
             Lyrics::Srt(_) => LyricsKind::Srt,
             Lyrics::Lyricsfile(_) => LyricsKind::Lyricsfile,
             Lyrics::Instrumental => LyricsKind::Instrumental,
+        }
+    }
+
+    pub fn sync_level(&self) -> SyncLevel {
+        match self {
+            Lyrics::Plain(_) | Lyrics::Instrumental => SyncLevel::Plain,
+            Lyrics::Lrc(_) | Lyrics::Srt(_) => SyncLevel::Line,
+            Lyrics::Elrc(_) => SyncLevel::Word,
+            Lyrics::Ttml(s) => ttml::sync_level(s),
+            Lyrics::Lyricsfile(s) => lyricsfile::sync_level(s),
         }
     }
 
@@ -80,6 +90,40 @@ impl Lyrics {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SyncLevel {
+    Plain,
+    Line,
+    Word,
+}
+
+impl SyncLevel {
+    pub fn rank(self) -> usize {
+        match self {
+            SyncLevel::Word => 0,
+            SyncLevel::Line => 1,
+            SyncLevel::Plain => 2,
+        }
+    }
+
+    pub fn from_rank(rank: usize) -> Option<SyncLevel> {
+        match rank {
+            0 => Some(SyncLevel::Word),
+            1 => Some(SyncLevel::Line),
+            2 => Some(SyncLevel::Plain),
+            _ => None,
+        }
+    }
+
+    pub fn slug(&self) -> &'static str {
+        match self {
+            SyncLevel::Word => "word-by-word",
+            SyncLevel::Line => "line-by-line",
+            SyncLevel::Plain => "plain",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LyricsKind {
     Plain,
@@ -101,6 +145,14 @@ impl LyricsKind {
             LyricsKind::Srt => "srt",
             LyricsKind::Lyricsfile => "lyricsfile",
             LyricsKind::Instrumental => "instrumental",
+        }
+    }
+
+    pub fn max_sync_level(&self) -> SyncLevel {
+        match self {
+            LyricsKind::Plain | LyricsKind::Instrumental => SyncLevel::Plain,
+            LyricsKind::Lrc | LyricsKind::Srt => SyncLevel::Line,
+            LyricsKind::Elrc | LyricsKind::Ttml | LyricsKind::Lyricsfile => SyncLevel::Word,
         }
     }
 
