@@ -27,8 +27,8 @@ Make sure your Navidrome version is at least `v0.63.0`.
 > [!TIP]
 > If you are using the "Write lyrics to files" option, you can do `".ttml,.yaml,.yml,.elrc,.lrc,.srt,.txt,embedded,nd-lyrics"` so Navidrome reads the files directly when available. This will only work if "Write to custom path" is disabled.
 
-> [!IMPORTANT]
-> For the TrueNAS Community Edition Navidrome app, add the environment variable with name `ND_LYRICSPRIORITY` and value `.ttml,.yaml,.yml,.elrc,.lrc,.srt,.txt,embedded,nd-lyrics` **without quotes**.
+> [!TIP]
+> If you're running the TrueNAS Community Edition Navidrome app, configuration is done via environment variables. Set `ND_LYRICSPRIORITY` to the same value you would use for `LyricsPriority`.
 
 3. You may need to restart Navidrome for the plugin to be detected. Don't forget to enable the plugin and configure it to your liking.
 
