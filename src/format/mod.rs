@@ -1,5 +1,6 @@
 use regex::Regex;
 
+pub mod censor;
 pub mod lrc;
 pub mod lyricsfile;
 pub mod ttml;

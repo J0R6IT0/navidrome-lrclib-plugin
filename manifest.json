@@ -184,6 +184,12 @@
           ]
         },
 
+        "preferUncensored": {
+          "type": "boolean",
+          "title": "Prefer uncensored lyrics [EXPERIMENTAL]",
+          "default": false
+        },
+
         "enableCache": {
           "type": "boolean",
           "title": "Enable lyrics cache",
@@ -394,6 +400,19 @@
             {
               "type": "Label",
               "text": "• Best sync level: same as type priority, but ranks results by their sync level (word-by-word > line-by-line > plain). More requests per lookup."
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/preferUncensored",
+              "rule": {
+                "effect": "SHOW",
+                "condition": {
+                  "scope": "#/properties/providerMode",
+                  "schema": {
+                    "enum": ["type", "sync"]
+                  }
+                }
+              }
             },
             {
               "type": "Control",

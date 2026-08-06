@@ -1,6 +1,6 @@
 use crate::{
     config::PluginConfig,
-    format::{self, lrc, lyricsfile, ttml},
+    format::{self, censor, lrc, lyricsfile, ttml},
 };
 use nd_pdk::lyrics::{GetLyricsResponse, LyricsText};
 use std::borrow::Cow;
@@ -36,6 +36,18 @@ impl Lyrics {
             Lyrics::Elrc(_) => SyncLevel::Word,
             Lyrics::Ttml(s) => ttml::sync_level(s),
             Lyrics::Lyricsfile(s) => lyricsfile::sync_level(s),
+        }
+    }
+
+    pub fn is_censored(&self) -> bool {
+        match self {
+            Lyrics::Plain(s)
+            | Lyrics::Lrc(s)
+            | Lyrics::Elrc(s)
+            | Lyrics::Ttml(s)
+            | Lyrics::Srt(s)
+            | Lyrics::Lyricsfile(s) => censor::is_censored(s),
+            Lyrics::Instrumental => false,
         }
     }
 

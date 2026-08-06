@@ -1,10 +1,10 @@
 use crate::cache::LyricsCache;
-use crate::config::{PluginConfig, ProviderEntry, ProviderMode};
+use crate::config::{PluginConfig, ProviderEntry};
 use crate::providers::{LyricsProvider, ProviderRegistry, register_providers};
 use crate::types::Lyrics;
 use extism_pdk::{info, warn};
 use nd_pdk::lyrics::TrackInfo;
-use ranking::Ranker;
+use ranking::{Rank, Ranker};
 
 mod ranking;
 mod selection;
@@ -28,6 +28,23 @@ pub fn run(track: &TrackInfo, cfg: &PluginConfig, cache: Option<&LyricsCache>) -
     .run()
 }
 
+struct PreparedProvider {
+    provider: Box<dyn LyricsProvider>,
+    label: String,
+    provider_id: String,
+}
+
+enum ProviderFetch {
+    Lyrics(Lyrics),
+    Empty,
+    Error,
+}
+
+struct Candidate {
+    lyrics: Lyrics,
+    rank: Rank,
+}
+
 struct Orchestrator<'a> {
     registry: &'a ProviderRegistry,
     track: &'a TrackInfo,
@@ -37,23 +54,22 @@ struct Orchestrator<'a> {
 
 impl Orchestrator<'_> {
     fn run(&self) -> Outcome {
-        let priority = &self.cfg.lyrics_type_priority;
-
-        match self.cfg.provider_mode {
-            ProviderMode::TypePriority => self.best_of(Ranker::TypePriority(priority)),
-            ProviderMode::BestSyncLevel => self.best_of(Ranker::SyncLevel(priority)),
-            ProviderMode::Priority | ProviderMode::Rotation => self.sequential(),
+        match Ranker::for_mode(self.cfg) {
+            Some(ranker) => self.best_of(ranker),
+            None => self.sequential(),
         }
+    }
+
+    fn prepared_providers(&self) -> impl Iterator<Item = PreparedProvider> + '_ {
+        selection::order_providers(self.cfg)
+            .into_iter()
+            .filter_map(|entry| self.prepare(entry))
     }
 
     fn sequential(&self) -> Outcome {
         let mut had_error = false;
 
-        for entry in selection::order_providers(self.cfg) {
-            let Some(prepared) = self.prepare(entry) else {
-                continue;
-            };
-
+        for prepared in self.prepared_providers() {
             match self.fetch_one(&prepared) {
                 ProviderFetch::Lyrics(lyrics) => return Outcome::Found(lyrics),
                 ProviderFetch::Error => had_error = true,
@@ -65,22 +81,19 @@ impl Orchestrator<'_> {
     }
 
     fn best_of(&self, ranker: Ranker) -> Outcome {
-        let mut best: Option<Lyrics> = None;
-        let mut best_rank = usize::MAX;
+        let mut best: Option<Candidate> = None;
         let mut had_error = false;
 
-        for entry in selection::order_providers(self.cfg) {
-            let Some(prepared) = self.prepare(entry) else {
-                continue;
-            };
-
-            let ceiling = ranker.ceiling(prepared.provider.supported_kinds());
-            if ceiling.is_some_and(|rank| rank >= best_rank) {
+        for prepared in self.prepared_providers() {
+            if let Some(current) = &best
+                && let Some(ceiling) = ranker.ceiling(prepared.provider.supported_kinds())
+                && ceiling >= current.rank
+            {
                 info!(
                     "skipping provider '{}': best possible ({}) cannot improve on current {} lyrics",
                     prepared.label,
-                    ceiling.map_or("none", |rank| ranker.describe_rank(rank)),
-                    ranker.describe_rank(best_rank),
+                    ranker.describe(ceiling),
+                    ranker.describe(current.rank),
                 );
                 continue;
             }
@@ -92,12 +105,15 @@ impl Orchestrator<'_> {
                     }
 
                     let rank = ranker.rank(&lyrics);
-                    if best.is_none() || rank < best_rank {
-                        best_rank = rank;
-                        best = Some(lyrics);
+                    if rank.is_censored() {
+                        info!("provider '{}' returned censored lyrics", prepared.label);
                     }
 
-                    if best_rank == 0 {
+                    if best.as_ref().is_none_or(|current| rank < current.rank) {
+                        best = Some(Candidate { lyrics, rank });
+                    }
+
+                    if rank == Rank::BEST {
                         break;
                     }
                 }
@@ -107,7 +123,7 @@ impl Orchestrator<'_> {
         }
 
         match best {
-            Some(lyrics) => Outcome::Found(lyrics),
+            Some(candidate) => Outcome::Found(candidate.lyrics),
             None => outcome_without_lyrics(had_error),
         }
     }
@@ -206,18 +222,6 @@ fn outcome_without_lyrics(had_error: bool) -> Outcome {
     } else {
         Outcome::NotFound
     }
-}
-
-struct PreparedProvider {
-    provider: Box<dyn LyricsProvider>,
-    label: String,
-    provider_id: String,
-}
-
-enum ProviderFetch {
-    Lyrics(Lyrics),
-    Empty,
-    Error,
 }
 
 fn provider_label(name: &str, params: &[(&'static str, String)]) -> String {

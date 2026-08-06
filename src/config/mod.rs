@@ -38,6 +38,7 @@ pub struct PluginConfig {
     pub negative_cache_ttl_hours: i64,
     pub providers: Vec<ProviderEntry>,
     pub provider_mode: ProviderMode,
+    pub prefer_uncensored: bool,
     pub write_to_specific_folder: bool,
     pub write_to_specific_folder_library_id: Option<i32>,
     pub write_to_specific_folder_template: String,
@@ -62,6 +63,7 @@ impl Default for PluginConfig {
             negative_cache_ttl_hours: ttl::DEFAULT_NEGATIVE_CACHE_TTL,
             providers: vec![],
             provider_mode: ProviderMode::default(),
+            prefer_uncensored: false,
             write_to_specific_folder: false,
             write_to_specific_folder_library_id: None,
             write_to_specific_folder_template: DEFAULT_FOLDER_TEMPLATE.to_string(),
@@ -99,6 +101,7 @@ impl PluginConfig {
             negative_cache_ttl_hours: ttl::resolve_negative()?,
             providers: providers::resolve_list()?,
             provider_mode: providers::resolve_mode()?,
+            prefer_uncensored: get_bool("preferUncensored", false)?,
             write_to_specific_folder: get_bool("writeToSpecificFolder", false)?,
             write_to_specific_folder_library_id: get_optional_i32(
                 "writeToSpecificFolderLibraryId",
