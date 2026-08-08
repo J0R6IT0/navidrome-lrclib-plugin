@@ -46,6 +46,7 @@ struct Line {
 struct Word {
     text: String,
     start: i64,
+    end: Option<i64>,
 }
 
 pub struct LrcMux {
@@ -144,13 +145,42 @@ impl LyricsProvider for LrcMux {
     }
 }
 
+/// Appends whitespace-only tokens to the word before them, dropping their own
+/// timestamp so the next word's start closes the merged one.
+///
+/// Responses from Musixmatch contain whitespaces as standalone words, and those
+/// separators hold most of the duration, so it looks like words are instantly
+/// highlighted in clients like Feishin. Ideally this should be fixed upstream,
+/// but this implementation should still work fine even if it gets fixed.
+fn merge_separators(words: &[Word]) -> Vec<Word> {
+    let mut out: Vec<Word> = Vec::with_capacity(words.len());
+    for w in words {
+        if w.text.trim().is_empty()
+            && let Some(prev) = out.last_mut()
+        {
+            prev.text.push_str(&w.text);
+            prev.end = w.end.or(prev.end);
+            continue;
+        }
+        out.push(Word {
+            text: w.text.clone(),
+            start: w.start,
+            end: w.end,
+        });
+    }
+    out
+}
+
 fn build_elrc(lines: &[Line]) -> String {
     lines
         .iter()
         .filter_map(|l| {
-            let (start, end, words) = (l.start?, l.end?, l.words.as_deref()?);
+            let start = l.start?;
+            let words = merge_separators(l.words.as_deref()?);
+            let end = words.last()?.end.or(l.end)?;
+
             let mut buf = format!("[{}]", ms_to_ts(start));
-            for w in words {
+            for w in &words {
                 buf.push_str(&format!("<{}>{}", ms_to_ts(w.start), w.text));
             }
             buf.push_str(&format!("<{}>", ms_to_ts(end)));
@@ -198,27 +228,83 @@ fn send_request(url: &str) -> Result<HTTPResponse, Error> {
 mod tests {
     use super::*;
 
+    fn word(text: &str, start: i64, end: i64) -> Word {
+        Word {
+            text: text.into(),
+            start,
+            end: Some(end),
+        }
+    }
+
     #[test]
     fn test_elrc_output() {
         let lines = vec![Line {
             text: "hello world".into(),
             start: Some(1000),
             end: Some(3000),
-            words: Some(vec![
-                Word {
-                    text: "hello".into(),
-                    start: 1000,
-                },
-                Word {
-                    text: "world".into(),
-                    start: 2000,
-                },
-            ]),
+            words: Some(vec![word("hello", 1000, 2000), word("world", 2000, 3000)]),
         }];
         assert_eq!(
             build_elrc(&lines),
             "[00:01.00]<00:01.00>hello<00:02.00>world<00:03.00>"
         );
+    }
+
+    #[test]
+    fn test_elrc_folds_separator_tokens_into_the_preceding_word() {
+        let lines = vec![Line {
+            text: "Looks like blue".into(),
+            start: Some(42350),
+            end: Some(44081),
+            words: Some(vec![
+                word("Looks", 42350, 42362),
+                word(" ", 42362, 42726),
+                word("like", 42726, 42746),
+                word(" ", 42746, 42969),
+                word("blue", 42969, 42983),
+            ]),
+        }];
+        assert_eq!(
+            build_elrc(&lines),
+            "[00:42.35]<00:42.35>Looks <00:42.72>like <00:42.96>blue<00:42.98>"
+        );
+    }
+
+    #[test]
+    fn test_elrc_ends_on_the_last_word_not_on_the_line() {
+        let lines = vec![Line {
+            text: "Yeah".into(),
+            start: Some(14075),
+            end: Some(27672),
+            words: Some(vec![word("Yeah", 14075, 14252)]),
+        }];
+        assert_eq!(build_elrc(&lines), "[00:14.07]<00:14.07>Yeah<00:14.25>");
+    }
+
+    #[test]
+    fn test_elrc_falls_back_to_the_line_end_when_the_last_word_has_none() {
+        let lines = vec![Line {
+            text: "hello".into(),
+            start: Some(1000),
+            end: Some(3000),
+            words: Some(vec![Word {
+                text: "hello".into(),
+                start: 1000,
+                end: None,
+            }]),
+        }];
+        assert_eq!(build_elrc(&lines), "[00:01.00]<00:01.00>hello<00:03.00>");
+    }
+
+    #[test]
+    fn test_elrc_extends_the_last_word_through_a_trailing_separator() {
+        let lines = vec![Line {
+            text: "hello".into(),
+            start: Some(1000),
+            end: Some(9000),
+            words: Some(vec![word("hello", 1000, 2000), word(" ", 2000, 2500)]),
+        }];
+        assert_eq!(build_elrc(&lines), "[00:01.00]<00:01.00>hello <00:02.50>");
     }
 
     #[test]
