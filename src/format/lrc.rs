@@ -118,8 +118,13 @@ pub fn format_timestamp(ms: i64) -> String {
     let hundredths = cs % 100;
     let total_secs = cs / 100;
     let secs = total_secs % 60;
-    let mins = total_secs / 60;
-    format!("{mins:02}:{secs:02}.{hundredths:02}")
+    let total_mins = total_secs / 60;
+
+    if total_mins < 100 {
+        return format!("{total_mins:02}:{secs:02}.{hundredths:02}");
+    }
+    let (hours, mins) = (total_mins / 60, total_mins % 60);
+    format!("{hours:02}:{mins:02}:{secs:02}.{hundredths:02}")
 }
 
 pub(crate) fn is_blank_timed_line(line: &str) -> bool {
@@ -227,20 +232,31 @@ fn parse_line(line: &str) -> Option<(Option<f64>, &str)> {
     let content = &rest[..bracket_end];
     let text = &rest[bracket_end + 1..];
 
-    let time_tag_secs = content.split_once(':').and_then(|(left, right)| {
-        if left.chars().all(|c| c.is_ascii_digit())
-            && right.contains('.')
-            && right.chars().all(|c| c.is_ascii_digit() || c == '.')
-        {
-            let mins = left.parse::<f64>().ok()?;
-            let secs = right.parse::<f64>().ok()?;
-            Some(mins * 60.0 + secs)
-        } else {
-            None
-        }
-    });
+    Some((parse_time_tag(content), text))
+}
 
-    Some((time_tag_secs, text))
+fn parse_time_tag(content: &str) -> Option<f64> {
+    let mut fields = content.split(':');
+    let (first, second, third) = (fields.next()?, fields.next()?, fields.next());
+    if fields.next().is_some() {
+        return None;
+    }
+
+    let (hours, mins, secs) = match third {
+        Some(secs) => (first, second, secs),
+        None => ("0", first, second),
+    };
+
+    let whole = |f: &str| !f.is_empty() && f.chars().all(|c| c.is_ascii_digit());
+    if !whole(hours) || !whole(mins) {
+        return None;
+    }
+    if !secs.contains('.') || !secs.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        return None;
+    }
+
+    let secs = secs.parse::<f64>().ok()?;
+    Some((hours.parse::<f64>().ok()? * 60.0 + mins.parse::<f64>().ok()?) * 60.0 + secs)
 }
 
 #[cfg(test)]
@@ -257,6 +273,23 @@ mod tests {
         assert_eq!(format_timestamp(736), "00:00.74");
         assert_eq!(format_timestamp(65_000), "01:05.00");
         assert_eq!(format_timestamp(-5), "00:00.00");
+    }
+
+    #[test]
+    fn test_sanitize_keeps_hour_form_lines() {
+        let lrc = "[01:40:05.00]<01:40:05.00>past <01:40:06.00>the hour<01:40:07.00>";
+        assert_eq!(sanitize(lrc), lrc);
+        assert!(is_synced(lrc));
+    }
+
+    #[test]
+    fn test_format_timestamp_rolls_into_hours_past_99_minutes() {
+        assert_eq!(format_timestamp(99 * 60_000 + 59_990), "99:59.99");
+        assert_eq!(format_timestamp(100 * 60_000), "01:40:00.00");
+        assert_eq!(
+            format_timestamp(3 * 3_600_000 + 25 * 60_000 + 7_120),
+            "03:25:07.12"
+        );
     }
 
     mod strip_word_tags_tests {
