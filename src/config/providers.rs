@@ -133,6 +133,13 @@ fn parse_provider_row(mut row: BTreeMap<String, Value>) -> Option<ProviderEntry>
                 Value::String(s) => s.trim().to_string(),
                 Value::Bool(b) => b.to_string(),
                 Value::Number(n) => n.to_string(),
+                Value::Array(items) => items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(","),
                 _ => return None,
             };
             (!value.is_empty()).then_some((key, value))

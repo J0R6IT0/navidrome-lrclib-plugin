@@ -83,6 +83,28 @@
                 "title": "Custom base URL",
                 "description": "Optional. Leave empty to use the provider's default."
               },
+              "sources": {
+                "type": "array",
+                "title": "Sources",
+                "uniqueItems": true,
+                "default": [
+                  "genius",
+                  "kugou",
+                  "musixmatch",
+                  "netease",
+                  "ytmusic"
+                ],
+                "items": {
+                  "type": "string",
+                  "oneOf": [
+                    { "const": "genius", "title": "Genius" },
+                    { "const": "kugou", "title": "KuGou" },
+                    { "const": "musixmatch", "title": "Musixmatch" },
+                    { "const": "netease", "title": "NetEase" },
+                    { "const": "ytmusic", "title": "YouTube Music" }
+                  ]
+                }
+              },
               "mediaUserToken": {
                 "type": "string",
                 "title": "Media user token",
@@ -439,6 +461,38 @@
                           }
                         }
                       }
+                    },
+                    {
+                      "type": "Label",
+                      "text": "Sources",
+                      "rule": {
+                        "effect": "SHOW",
+                        "condition": {
+                          "scope": "#/properties/provider",
+                          "schema": {
+                            "const": "lrcmux"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "VerticalLayout",
+                      "rule": {
+                        "effect": "SHOW",
+                        "condition": {
+                          "scope": "#/properties/provider",
+                          "schema": {
+                            "const": "lrcmux"
+                          }
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Control",
+                          "scope": "#/properties/sources",
+                          "label": false
+                        }
+                      ]
                     },
                     {
                       "type": "Control",

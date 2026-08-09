@@ -586,6 +586,3 @@ mod tests {
         assert_eq!(to_lrc(""), "");
     }
 }
-
-
-

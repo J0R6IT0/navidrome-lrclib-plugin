@@ -50,8 +50,11 @@ struct Word {
     end: Option<i64>,
 }
 
+const KNOWN_SOURCES: &[&str] = &["genius", "kugou", "musixmatch", "netease", "ytmusic"];
+
 pub struct LrcMux {
     base_url: String,
+    sources: Option<String>,
 }
 
 impl LrcMux {
@@ -61,8 +64,22 @@ impl LrcMux {
                 .get("baseUrl")
                 .unwrap_or(DEFAULT_BASE_URL)
                 .to_string(),
+            sources: restrict_sources(params.get("sources")),
         })
     }
+}
+
+fn restrict_sources(configured: Option<&str>) -> Option<String> {
+    let picked: Vec<&str> = configured?
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if picked.is_empty() || KNOWN_SOURCES.iter().all(|known| picked.contains(known)) {
+        return None;
+    }
+    Some(picked.join(","))
 }
 
 impl LyricsProvider for LrcMux {
@@ -71,7 +88,11 @@ impl LyricsProvider for LrcMux {
     }
 
     fn log_params(&self) -> Vec<(&'static str, String)> {
-        vec![("baseUrl", self.base_url.clone())]
+        let mut params = vec![("baseUrl", self.base_url.clone())];
+        if let Some(sources) = &self.sources {
+            params.push(("sources", sources.clone()));
+        }
+        params
     }
 
     fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
@@ -81,13 +102,19 @@ impl LyricsProvider for LrcMux {
 
         let duration = track.duration.round() as i64;
 
-        let qs = serde_urlencoded::to_string([
+        let duration = duration.to_string();
+        let mut query = vec![
             ("artist", first_artist),
             ("title", track.title.as_str()),
             ("album", track.album.as_str()),
-            ("duration", &duration.to_string()),
-        ])
-        .map_err(|e| Error::new(format!("lrcmux: failed to encode query: {e}")))?;
+            ("duration", duration.as_str()),
+        ];
+        if let Some(sources) = &self.sources {
+            query.push(("sources", sources.as_str()));
+        }
+
+        let qs = serde_urlencoded::to_string(&query)
+            .map_err(|e| Error::new(format!("lrcmux: failed to encode query: {e}")))?;
 
         let response = send_request(&format!("{}/get?{qs}", self.base_url))?;
 
@@ -197,6 +224,33 @@ fn send_request(url: &str) -> Result<HTTPResponse, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_sources_are_unrestricted_when_unset_or_complete() {
+        assert_eq!(restrict_sources(None), None);
+        assert_eq!(restrict_sources(Some("")), None);
+        assert_eq!(restrict_sources(Some(" , ")), None);
+        assert_eq!(
+            restrict_sources(Some("genius,kugou,musixmatch,netease,ytmusic")),
+            None
+        );
+        assert_eq!(
+            restrict_sources(Some("ytmusic,netease,musixmatch,kugou,genius,future")),
+            None
+        );
+    }
+
+    #[test]
+    fn test_sources_restrict_when_a_source_is_deselected() {
+        assert_eq!(
+            restrict_sources(Some("genius,kugou,musixmatch,netease")),
+            Some("genius,kugou,musixmatch,netease".to_string())
+        );
+        assert_eq!(
+            restrict_sources(Some(" musixmatch , kugou ")),
+            Some("musixmatch,kugou".to_string())
+        );
+    }
 
     fn word(text: &str, start: i64, end: i64) -> Word {
         Word {
