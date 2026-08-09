@@ -1,3 +1,4 @@
+use crate::format::elrc;
 use flate2::read::ZlibDecoder;
 use regex::Regex;
 use std::io::Read;
@@ -45,22 +46,21 @@ fn convert(krc: &str) -> String {
             continue;
         };
 
-        let start: u64 = caps[1].parse().unwrap_or(0);
-        let body = &caps[2];
+        let start: i64 = caps[1].parse().unwrap_or(0);
+        let words: Vec<elrc::Word> = word_re
+            .captures_iter(&caps[2])
+            .map(|word| {
+                let offset: i64 = word[1].parse().unwrap_or(0);
+                let duration: i64 = word[2].parse().unwrap_or(0);
+                elrc::Word {
+                    text: word[3].to_string(),
+                    start_ms: start + offset,
+                    end_ms: start + offset + duration,
+                }
+            })
+            .collect();
 
-        let mut rendered = format!("[{}]", format_timestamp(start));
-        let mut last_word_end: Option<u64> = None;
-
-        for word in word_re.captures_iter(body) {
-            let offset: u64 = word[1].parse().unwrap_or(0);
-            let duration: u64 = word[2].parse().unwrap_or(0);
-            let text = &word[3];
-            rendered.push_str(&format!("<{}>{}", format_timestamp(start + offset), text));
-            last_word_end = Some(offset + duration);
-        }
-
-        if let Some(end) = last_word_end {
-            rendered.push_str(&format!("<{}>", format_timestamp(start + end)));
+        if let Some(rendered) = elrc::render_line(start, &words) {
             out.push(rendered);
         }
     }
@@ -68,26 +68,9 @@ fn convert(krc: &str) -> String {
     out.join("\n")
 }
 
-fn format_timestamp(ms: u64) -> String {
-    let cs = (ms + 5) / 10;
-    let hundredths = cs % 100;
-    let total_secs = cs / 100;
-    let secs = total_secs % 60;
-    let mins = total_secs / 60;
-    format!("{mins:02}:{secs:02}.{hundredths:02}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_format_timestamp() {
-        assert_eq!(format_timestamp(0), "00:00.00");
-        assert_eq!(format_timestamp(736), "00:00.74");
-        assert_eq!(format_timestamp(5890), "00:05.89");
-        assert_eq!(format_timestamp(65_000), "01:05.00");
-    }
 
     #[test]
     fn test_convert_word_timing() {
@@ -111,6 +94,15 @@ mod tests {
     fn test_convert_closes_last_word() {
         let krc = "[0,1000]<0,500,0>hi";
         assert_eq!(convert(krc), "[00:00.00]<00:00.00>hi<00:00.50>");
+    }
+
+    #[test]
+    fn test_convert_parks_a_mid_line_pause_on_the_trailing_space() {
+        let krc = "[129364,6000]<0,464,0>guy <5592,360,0>duh";
+        assert_eq!(
+            convert(krc),
+            "[02:09.36]<02:09.36>guy<02:09.83> <02:14.96>duh<02:15.32>"
+        );
     }
 
     #[test]
