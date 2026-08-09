@@ -3,6 +3,9 @@ use std::borrow::Cow;
 const KEEP_TAGS: &[&str] = &["offset"];
 
 const CREDIT_PREFIXES: &[&str] = &[
+    "Artist",
+    "Album",
+    "Title",
     "Lyrics by",
     "Composed by",
     "Produced by",
@@ -110,6 +113,15 @@ pub(crate) fn time_tag_secs(line: &str) -> Option<f64> {
     }
 }
 
+pub fn format_timestamp(ms: i64) -> String {
+    let cs = (ms.max(0) + 5) / 10;
+    let hundredths = cs % 100;
+    let total_secs = cs / 100;
+    let secs = total_secs % 60;
+    let mins = total_secs / 60;
+    format!("{mins:02}:{secs:02}.{hundredths:02}")
+}
+
 pub(crate) fn is_blank_timed_line(line: &str) -> bool {
     matches!(
         parse_line(line),
@@ -151,7 +163,7 @@ fn keep_line(line: &str, first_time_tag_seen: &mut bool) -> bool {
 
 fn is_title_header(text: &str) -> bool {
     let plain = strip_word_tags(text);
-    plain.contains(" - ") && plain.chars().any(|c| c.is_alphabetic())
+    (plain.contains(" - ") || plain.contains(" — ")) && plain.chars().any(char::is_alphabetic)
 }
 
 fn is_droppable_metadata(line: &str) -> bool {
@@ -233,10 +245,19 @@ fn parse_line(line: &str) -> Option<(Option<f64>, &str)> {
 
 #[cfg(test)]
 mod tests {
+    use super::format_timestamp;
     use super::is_instrumental;
     use super::is_synced;
     use super::sanitize;
     use super::strip_word_tags;
+
+    #[test]
+    fn test_format_timestamp_rounds_to_centiseconds() {
+        assert_eq!(format_timestamp(0), "00:00.00");
+        assert_eq!(format_timestamp(736), "00:00.74");
+        assert_eq!(format_timestamp(65_000), "01:05.00");
+        assert_eq!(format_timestamp(-5), "00:00.00");
+    }
 
     mod strip_word_tags_tests {
         use super::strip_word_tags;

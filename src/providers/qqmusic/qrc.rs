@@ -7,6 +7,7 @@
 //! where every timestamp is in absolute milliseconds and the timing tuple comes
 //! after the word it belongs to.
 
+use crate::format::{elrc, lrc};
 use flate2::read::ZlibDecoder;
 use regex::Regex;
 use std::io::Read;
@@ -97,20 +98,17 @@ pub fn to_enhanced_lrc(content: &str) -> String {
     let mut out = Vec::new();
 
     for line in parse_lines(content) {
-        let mut rendered = format!("[{}]", format_timestamp(line.start_ms));
-        let mut last_end: Option<u64> = None;
+        let words: Vec<elrc::Word> = line
+            .words
+            .iter()
+            .map(|word| elrc::Word {
+                text: word.text.clone(),
+                start_ms: word.start_ms as i64,
+                end_ms: (word.start_ms + word.duration_ms) as i64,
+            })
+            .collect();
 
-        for word in &line.words {
-            rendered.push_str(&format!(
-                "<{}>{}",
-                format_timestamp(word.start_ms),
-                word.text
-            ));
-            last_end = Some(word.start_ms + word.duration_ms);
-        }
-
-        if let Some(end) = last_end {
-            rendered.push_str(&format!("<{}>", format_timestamp(end)));
+        if let Some(rendered) = elrc::render_line(line.start_ms as i64, &words) {
             out.push(rendered);
         }
     }
@@ -123,7 +121,11 @@ pub fn to_lrc(content: &str) -> String {
 
     for line in parse_lines(content) {
         let text: String = line.words.iter().map(|w| w.text.as_str()).collect();
-        out.push(format!("[{}]{}", format_timestamp(line.start_ms), text));
+        out.push(format!(
+            "[{}]{}",
+            lrc::format_timestamp(line.start_ms as i64),
+            text
+        ));
     }
 
     out.join("\n")
@@ -174,15 +176,6 @@ pub fn extract_lyric_content(xml: &str) -> Option<String> {
 pub fn is_qrc(content: &str) -> bool {
     let re = Regex::new(r"(?m)^\[\d+,\d+\]").unwrap();
     re.is_match(content)
-}
-
-fn format_timestamp(ms: u64) -> String {
-    let cs = (ms + 5) / 10;
-    let hundredths = cs % 100;
-    let total_secs = cs / 100;
-    let secs = total_secs % 60;
-    let mins = total_secs / 60;
-    format!("{mins:02}:{secs:02}.{hundredths:02}")
 }
 
 fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
@@ -529,13 +522,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_format_timestamp() {
-        assert_eq!(format_timestamp(0), "00:00.00");
-        assert_eq!(format_timestamp(370), "00:00.37");
-        assert_eq!(format_timestamp(65_000), "01:05.00");
-    }
-
-    #[test]
     fn test_to_enhanced_lrc_absolute_timing() {
         let content =
             "[370,2624]Is (370,336)this (706,285)the (991,355)real (1346,904)life(2250,744)";
@@ -600,3 +586,6 @@ mod tests {
         assert_eq!(to_lrc(""), "");
     }
 }
+
+
+

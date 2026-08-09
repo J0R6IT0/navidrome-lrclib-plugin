@@ -1,3 +1,4 @@
+use crate::format::elrc;
 use regex::Regex;
 
 /// YRC lines look like:
@@ -15,22 +16,21 @@ pub fn to_enhanced_lrc(yrc: &str) -> String {
             continue;
         };
 
-        let start: u64 = caps[1].parse().unwrap_or(0);
-        let body = &caps[2];
+        let start: i64 = caps[1].parse().unwrap_or(0);
+        let words: Vec<elrc::Word> = word_re
+            .captures_iter(&caps[2])
+            .map(|word| {
+                let word_start: i64 = word[1].parse().unwrap_or(0);
+                let duration: i64 = word[2].parse().unwrap_or(0);
+                elrc::Word {
+                    text: word[3].to_string(),
+                    start_ms: word_start,
+                    end_ms: word_start + duration,
+                }
+            })
+            .collect();
 
-        let mut rendered = format!("[{}]", format_timestamp(start));
-        let mut last_word_end: Option<u64> = None;
-
-        for word in word_re.captures_iter(body) {
-            let word_start: u64 = word[1].parse().unwrap_or(0);
-            let duration: u64 = word[2].parse().unwrap_or(0);
-            let text = &word[3];
-            rendered.push_str(&format!("<{}>{}", format_timestamp(word_start), text));
-            last_word_end = Some(word_start + duration);
-        }
-
-        if let Some(end) = last_word_end {
-            rendered.push_str(&format!("<{}>", format_timestamp(end)));
+        if let Some(rendered) = elrc::render_line(start, &words) {
             out.push(rendered);
         }
     }
@@ -38,25 +38,9 @@ pub fn to_enhanced_lrc(yrc: &str) -> String {
     out.join("\n")
 }
 
-fn format_timestamp(ms: u64) -> String {
-    let cs = (ms + 5) / 10;
-    let hundredths = cs % 100;
-    let total_secs = cs / 100;
-    let secs = total_secs % 60;
-    let mins = total_secs / 60;
-    format!("{mins:02}:{secs:02}.{hundredths:02}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_format_timestamp() {
-        assert_eq!(format_timestamp(0), "00:00.00");
-        assert_eq!(format_timestamp(736), "00:00.74");
-        assert_eq!(format_timestamp(65_000), "01:05.00");
-    }
 
     #[test]
     fn test_convert_word_timing_absolute() {
