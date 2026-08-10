@@ -7,18 +7,19 @@ A Navidrome plugin to fetch lyrics from multiple sources. Formerly Navidrome LRC
 
 ## Features
 
-- Support for multiple providers (see below).
-- Choose which lyrics types to fetch (LRC, ELRC, TTML, SRT, YAML Lyricsfile, plain), with configurable priority.
-- Sanitizes lyrics and optionally strips section labels ([Verse], [Chorus], etc.)
-- Caching of lyrics for a configurable duration.
-- Option to write lyrics to files, next to tracks or in custom paths.
-- And much more!
+- Multiple [lyrics providers](https://github.com/J0R6IT0/navidrome-lyrics-plugin#providers).
+- Supports plain, line-synced and word-by-word lyrics in TTML, LRC, ELRC, Lyricsfile and other formats.
+- Allows writting lyrics to sidecar files.
+- Different provider modes to query by priority, preferred format or sync level.
+- Configurable caching to reduce network calls.
+- Cleans up lyrics by removing section labels, credits and other unwanted text.
 
 ## Installation
 
 Make sure your Navidrome version is at least `v0.63.0`.
 
 1. Download the latest `nd-lyrics.ndp` from the Releases page and place it in your plugins folder.
+
 2. Add `nd-lyrics` to the `LyricsPriority` config option. See [here](https://www.navidrome.org/docs/usage/configuration/options/#:~:text=true-,LyricsPriority,-ND_LYRICSPRIORITY).
 
 > [!IMPORTANT]
@@ -38,16 +39,18 @@ Make sure your Navidrome version is at least `v0.63.0`.
 
 At this time, the following providers are available. Please report any issues you encounter while using them.
 
-| Provider    | Type                 | Translations | Romanization | Notes                           |
-| ----------- | -------------------- | :----------: | :----------: | ------------------------------- |
-| LRCLIB      | plain,lrc,lyricsfile |      ✗       |      ✗       | Supports custom base URL        |
-| lyrics.ovh  | plain                |      ✗       |      ✗       | Supports custom base URL        |
-| lrcmux      | plain,lrc,elrc       |      ✗       |      ✗       | Supports custom base URL        |
-| KuGou       | lrc,elrc             |      ✗       |      ✗       |                                 |
-| NetEase     | lrc,elrc             |      ✗       |      ✗       |                                 |
-| QQ Music    | lrc,elrc             |      ✗       |      ✗       |                                 |
-| Apple Music | ttml                 |      ✓       |      ✓       | Requires an active subscription |
-| stixoi.info | plain                |      ✗       |      ✗       | Greek lyrics archive            |
+Some of the providers don't host lyrics themselves, they pull them from other websites. Those are indicated in the `Sources` column.
+
+| Provider    | Sources                                                               | Type                 | Notes                                                                |
+| ----------- | --------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------- |
+| LRCLIB      |                                                                       | plain,lrc,lyricsfile | Supports custom instances                                            |
+| lyrics.ovh  | Genius, AZLyrics, Paroles.net, LyricsMania, Letras.mus.br, Lyrics.com | plain                | Supports custom instances                                            |
+| lrcmux      | Genius, KuGou, Musixmatch, NetEase, YouTube Music                     | plain,lrc,elrc       | Supports custom instances                                            |
+| KuGou       |                                                                       | lrc,elrc             |                                                                      |
+| NetEase     |                                                                       | lrc,elrc             |                                                                      |
+| QQ Music    |                                                                       | lrc,elrc             |                                                                      |
+| Apple Music |                                                                       | ttml                 | Supports translations and romanization. Requires active subscription |
+| stixoi.info |                                                                       | plain                | Greek lyrics archive                                                 |
 
 ## Provider modes
 
