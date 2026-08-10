@@ -1,6 +1,6 @@
 # Navidrome Lyrics Plugin
 
-A Navidrome plugin to fetch lyrics from multiple sources. Formerly Navidrome LRCLIB Plugin.
+A Navidrome plugin for fetching lyrics from multiple sources. Formerly Navidrome LRCLIB Plugin.
 
 > [!IMPORTANT]
 > The Navidrome WebUI does not display lyrics from plugins at the moment, you need a third party client in order to see them.
