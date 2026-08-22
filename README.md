@@ -9,7 +9,7 @@ A Navidrome plugin for fetching lyrics from multiple sources. Formerly Navidrome
 
 - Multiple [lyrics providers](https://github.com/J0R6IT0/navidrome-lyrics-plugin#providers).
 - Supports plain, line-synced and word-by-word lyrics in TTML, LRC, ELRC, Lyricsfile and other formats.
-- Allows writting lyrics to sidecar files.
+- Allows writing lyrics to sidecar files.
 - Different provider modes to query by priority, preferred format or sync level.
 - Configurable caching to reduce network calls.
 - Cleans up lyrics by removing section labels, credits and other unwanted text.
@@ -23,7 +23,7 @@ Make sure your Navidrome version is at least `v0.63.0`.
 2. Add `nd-lyrics` to the `LyricsPriority` config option. See [here](https://www.navidrome.org/docs/usage/configuration/options/#:~:text=true-,LyricsPriority,-ND_LYRICSPRIORITY).
 
 > [!IMPORTANT]
-> The value added to `LyricsPriority` should match the name of the plugin without the extension. If you rename the plugin to `lyrics.npd`, you should add `lyrics` instead of `nd-lyrics`.
+> The value added to `LyricsPriority` should match the name of the plugin without the extension. If you rename the plugin to `lyrics.ndp`, you should add `lyrics` instead of `nd-lyrics`.
 
 > [!TIP]
 > If you are using the "Write lyrics to files" option, you can do `".ttml,.yaml,.yml,.elrc,.lrc,.srt,.txt,embedded,nd-lyrics"` so Navidrome reads the files directly when available. This will only work if "Write to custom path" is disabled.
@@ -76,7 +76,7 @@ Consider the following example:
 _lyrics/{type}/{track:album}/{track:track_number:2} - {track:title}
 ```
 
-This will be transfored into something like this:
+This will be transformed into something like this:
 
 ```
 <selected_library_root>/_lyrics/lrc/The Razors Edge/01 - Thunderstruck.lrc
