@@ -38,7 +38,7 @@
           "type": "string",
           "title": "Instrumental lyrics text",
           "default": "Instrumental",
-          "description": "The text to use for instrumental lyrics."
+          "description": "The text to use for instrumental lyrics. Leave blank to not return instrumental lyrics to navidrome and skip writing them to files."
         },
 
         "stripSectionLabels": {

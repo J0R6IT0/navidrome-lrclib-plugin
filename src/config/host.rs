@@ -4,9 +4,12 @@ use nd_pdk::{host::config, lyrics::Error};
 use std::num::IntErrorKind;
 
 pub fn get_string(key: &str) -> Result<Option<String>> {
-    config::get(key)
-        .map_err(|e| Error::new(e.to_string()))
-        .map(|v| v.filter(|s| !s.trim().is_empty()))
+    Ok(get_raw_string(key)?.filter(|s| !s.trim().is_empty()))
+}
+
+/// Like [`get_string`], but keeps blank values.
+pub fn get_raw_string(key: &str) -> Result<Option<String>> {
+    config::get(key).map_err(|e| Error::new(e.to_string()))
 }
 
 pub fn get_bool(key: &str, default: bool) -> Result<bool> {

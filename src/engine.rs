@@ -2,7 +2,7 @@ use crate::cache::{CacheLookup, LyricsCache};
 use crate::config::PluginConfig;
 use crate::ext::TrackInfoExt;
 use crate::fetch::{self, Outcome};
-use crate::types::Lyrics;
+use crate::types::{Lyrics, LyricsKind};
 use crate::writing;
 use extism_pdk::{debug, info, warn};
 use nd_pdk::lyrics::{Error as LyricsError, GetLyricsResponse, TrackInfo};
@@ -20,6 +20,14 @@ pub fn get_lyrics(track: TrackInfo) -> Result<GetLyricsResponse, LyricsError> {
             lyrics
         }
     };
+
+    if cfg.skips_instrumental() && lyrics.kind() == LyricsKind::Instrumental {
+        info!("'{}' is instrumental, not writing lyrics", track.label());
+        return Err(LyricsError::new(format!(
+            "'{}' is an instrumental track",
+            track.label()
+        )));
+    }
 
     write_if_enabled(&track, &lyrics, &cfg);
     Ok(lyrics.to_response(&cfg))

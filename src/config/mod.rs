@@ -1,6 +1,6 @@
 use crate::types::LyricsKind;
 use extism_pdk::warn;
-use host::{get_bool, get_f64, get_optional_i32, get_string};
+use host::{get_bool, get_f64, get_optional_i32, get_raw_string, get_string};
 use nd_pdk::lyrics::Error;
 
 mod host;
@@ -43,7 +43,7 @@ pub struct PluginConfig {
     pub write_to_specific_folder_library_id: Option<i32>,
     pub write_to_specific_folder_template: String,
     pub strip_section_labels: bool,
-    pub instrumental_text: String,
+    pub instrumental_text: Option<String>,
     pub duration_tolerance_secs: f32,
 }
 
@@ -68,7 +68,7 @@ impl Default for PluginConfig {
             write_to_specific_folder_library_id: None,
             write_to_specific_folder_template: DEFAULT_FOLDER_TEMPLATE.to_string(),
             strip_section_labels: false,
-            instrumental_text: DEFAULT_INSTRUMENTAL_TEXT.to_string(),
+            instrumental_text: Some(DEFAULT_INSTRUMENTAL_TEXT.to_string()),
             duration_tolerance_secs: DEFAULT_DURATION_TOLERANCE_SECS,
         }
     }
@@ -109,8 +109,7 @@ impl PluginConfig {
             write_to_specific_folder_template: get_string("writeToSpecificFolderTemplate")?
                 .unwrap_or_else(|| DEFAULT_FOLDER_TEMPLATE.to_string()),
             strip_section_labels: get_bool("stripSectionLabels", false)?,
-            instrumental_text: get_string("instrumentalText")?
-                .unwrap_or_else(|| DEFAULT_INSTRUMENTAL_TEXT.to_string()),
+            instrumental_text: resolve_instrumental_text()?,
             duration_tolerance_secs: resolve_duration_tolerance()?,
         })
     }
@@ -131,6 +130,10 @@ impl PluginConfig {
         (self.duration_tolerance_secs * 1000.0).round() as u64
     }
 
+    pub fn skips_instrumental(&self) -> bool {
+        self.instrumental_text.is_none()
+    }
+
     pub fn extension_for(&self, kind: LyricsKind) -> &str {
         match kind {
             LyricsKind::Plain => self.plain_extension.as_str(),
@@ -142,6 +145,14 @@ impl PluginConfig {
             LyricsKind::Lyricsfile => "yml",
         }
     }
+}
+
+fn resolve_instrumental_text() -> Result<Option<String>> {
+    Ok(match get_raw_string("instrumentalText")? {
+        Some(text) if text.trim().is_empty() => None,
+        Some(text) => Some(text),
+        None => Some(DEFAULT_INSTRUMENTAL_TEXT.to_string()),
+    })
 }
 
 fn resolve_lyrics_type_priority() -> Result<Vec<LyricsKind>> {
@@ -213,6 +224,18 @@ fn resolve_duration_tolerance() -> Result<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_skips_instrumental_only_when_text_is_blank() {
+        let cfg = PluginConfig::default();
+        assert!(!cfg.skips_instrumental());
+
+        let cfg = PluginConfig {
+            instrumental_text: None,
+            ..PluginConfig::default()
+        };
+        assert!(cfg.skips_instrumental());
+    }
 
     #[test]
     fn test_default_matches_the_load_time_fallback() {

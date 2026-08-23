@@ -59,7 +59,9 @@ impl Lyrics {
             | Lyrics::Ttml(s)
             | Lyrics::Srt(s)
             | Lyrics::Lyricsfile(s) => Cow::Borrowed(s),
-            Lyrics::Instrumental => Cow::Borrowed(&cfg.instrumental_text),
+            Lyrics::Instrumental => {
+                Cow::Borrowed(cfg.instrumental_text.as_deref().unwrap_or_default())
+            }
         }
     }
 
