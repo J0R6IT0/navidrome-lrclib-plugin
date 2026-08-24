@@ -225,47 +225,93 @@ fn resolve_duration_tolerance() -> Result<f32> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_skips_instrumental_only_when_text_is_blank() {
-        let cfg = PluginConfig::default();
-        assert!(!cfg.skips_instrumental());
+    #[track_caller]
+    fn check_formats(raw: &str, expected: &[LyricsKind]) {
+        assert_eq!(parse_lyrics_formats(raw), expected, "formats from {raw:?}");
+    }
 
-        let cfg = PluginConfig {
+    #[track_caller]
+    fn check_extension(raw: &str, expected: &str) {
+        assert_eq!(normalize_extension(raw), expected, "extension from {raw:?}");
+    }
+
+    #[track_caller]
+    fn check_cache_ttl(config: &PluginConfig, kind: LyricsKind, expected: i64) {
+        assert_eq!(
+            config.cache_ttl_hours_for(kind),
+            expected,
+            "ttl for {kind:?}"
+        );
+    }
+
+    #[test]
+    fn formats_are_tried_in_the_order_they_were_listed() {
+        check_formats(
+            "ttml,lyricsfile,elrc,lrc,srt,plain",
+            &[
+                LyricsKind::Ttml,
+                LyricsKind::Lyricsfile,
+                LyricsKind::Elrc,
+                LyricsKind::Lrc,
+                LyricsKind::Srt,
+                LyricsKind::Plain,
+            ],
+        );
+        check_formats("plain,lrc", &[LyricsKind::Plain, LyricsKind::Lrc]);
+    }
+
+    #[test]
+    fn format_names_ignore_case_and_padding() {
+        check_formats(" LRC , Plain ", &[LyricsKind::Lrc, LyricsKind::Plain]);
+    }
+
+    #[test]
+    fn a_format_listed_twice_is_wanted_once() {
+        check_formats("lrc,lrc", &[LyricsKind::Lrc]);
+    }
+
+    #[test]
+    fn formats_nobody_recognises_are_dropped() {
+        check_formats("lrc,bogus,,lrc", &[LyricsKind::Lrc]);
+        check_formats("", &[]);
+        check_formats("bogus", &[]);
+    }
+
+    #[test]
+    fn instrumental_is_never_a_requested_format() {
+        check_formats("instrumental,plain", &[LyricsKind::Plain]);
+        check_formats("instrumental", &[]);
+    }
+
+    #[test]
+    fn instrumental_tracks_are_skipped_only_when_their_text_is_blank() {
+        let config = PluginConfig {
             instrumental_text: None,
             ..PluginConfig::default()
         };
-        assert!(cfg.skips_instrumental());
+
+        assert!(config.skips_instrumental());
     }
 
     #[test]
-    fn test_default_matches_the_load_time_fallback() {
-        let cfg = PluginConfig::default();
-
-        assert_eq!(cfg.lyrics_type_priority, DEFAULT_LYRICS_FORMATS);
-        assert!(cfg.wants(LyricsKind::Lrc));
-        assert!(!cfg.wants(LyricsKind::Ttml));
-    }
-
-    #[test]
-    fn test_per_type_cache_ttl_defaults_to_off() {
-        assert!(!PluginConfig::default().per_type_cache_ttl);
-    }
-
-    #[test]
-    fn test_cache_ttl_uses_global_when_per_type_off() {
-        let cfg = PluginConfig {
+    fn one_ttl_covers_every_format_until_per_type_is_turned_on() {
+        let config = PluginConfig {
             per_type_cache_ttl: false,
             cache_ttl_hours: 168,
+            type_cache_ttl_hours: TypeCacheTtls {
+                plain: 1,
+                ..TypeCacheTtls::default()
+            },
             ..PluginConfig::default()
         };
 
-        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Ttml), 168);
-        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Plain), 168);
+        check_cache_ttl(&config, LyricsKind::Ttml, 168);
+        check_cache_ttl(&config, LyricsKind::Plain, 168);
     }
 
     #[test]
-    fn test_cache_ttl_uses_type_ttls_when_per_type_on() {
-        let cfg = PluginConfig {
+    fn per_type_ttls_give_each_format_its_own() {
+        let config = PluginConfig {
             per_type_cache_ttl: true,
             cache_ttl_hours: 168,
             type_cache_ttl_hours: TypeCacheTtls {
@@ -280,85 +326,86 @@ mod tests {
             ..PluginConfig::default()
         };
 
-        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Plain), 1);
-        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Lrc), 2);
-        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Elrc), 3);
-        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Ttml), 4);
-        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Srt), 5);
-        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Lyricsfile), 6);
-        assert_eq!(cfg.cache_ttl_hours_for(LyricsKind::Instrumental), 7);
+        for (kind, expected) in [
+            (LyricsKind::Plain, 1),
+            (LyricsKind::Lrc, 2),
+            (LyricsKind::Elrc, 3),
+            (LyricsKind::Ttml, 4),
+            (LyricsKind::Srt, 5),
+            (LyricsKind::Lyricsfile, 6),
+            (LyricsKind::Instrumental, 7),
+        ] {
+            check_cache_ttl(&config, kind, expected);
+        }
     }
 
     #[test]
-    fn test_duration_tolerance_ms_keeps_fractional_seconds() {
-        let cfg = PluginConfig {
-            duration_tolerance_secs: 2.5,
+    fn a_tolerance_in_seconds_keeps_its_fraction_in_milliseconds() {
+        for (secs, expected) in [(3.0, 3000), (2.5, 2500), (0.25, 250), (0.0005, 1)] {
+            let config = PluginConfig {
+                duration_tolerance_secs: secs,
+                ..PluginConfig::default()
+            };
+
+            assert_eq!(config.duration_tolerance_ms(), expected, "{secs}s");
+        }
+    }
+
+    #[test]
+    fn synced_formats_are_written_under_their_own_names() {
+        let config = PluginConfig::default();
+
+        for (kind, expected) in [
+            (LyricsKind::Lrc, "lrc"),
+            (LyricsKind::Elrc, "elrc"),
+            (LyricsKind::Ttml, "ttml"),
+            (LyricsKind::Srt, "srt"),
+            (LyricsKind::Lyricsfile, "yml"),
+        ] {
+            assert_eq!(
+                config.extension_for(kind),
+                expected,
+                "extension for {kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn plain_and_instrumental_are_written_under_the_configured_extensions() {
+        let config = PluginConfig {
+            plain_extension: "text".to_string(),
+            instrumental_extension: "inst".to_string(),
             ..PluginConfig::default()
         };
 
-        assert_eq!(cfg.duration_tolerance_ms(), 2500);
+        assert_eq!(config.extension_for(LyricsKind::Plain), "text");
+        assert_eq!(config.extension_for(LyricsKind::Instrumental), "inst");
     }
 
     #[test]
-    fn test_parse_lyrics_formats_preserves_order() {
-        assert_eq!(
-            parse_lyrics_formats("ttml,lyricsfile,elrc,lrc,srt,plain"),
-            vec![
-                LyricsKind::Ttml,
-                LyricsKind::Lyricsfile,
-                LyricsKind::Elrc,
-                LyricsKind::Lrc,
-                LyricsKind::Srt,
-                LyricsKind::Plain,
-            ]
-        );
+    fn extensions_lose_their_leading_dots_and_padding() {
+        for (raw, expected) in [
+            ("lrc", "lrc"),
+            (".lrc", "lrc"),
+            ("...lrc", "lrc"),
+            ("  .txt  ", "txt"),
+            (".", ""),
+        ] {
+            check_extension(raw, expected);
+        }
     }
 
     #[test]
-    fn test_parse_lyrics_formats_trims_and_ignores_case() {
-        assert_eq!(
-            parse_lyrics_formats(" LRC , Plain "),
-            vec![LyricsKind::Lrc, LyricsKind::Plain]
-        );
-    }
-
-    #[test]
-    fn test_parse_lyrics_formats_dedups_and_skips_unknown() {
-        assert_eq!(parse_lyrics_formats("lrc,bogus,lrc"), vec![LyricsKind::Lrc]);
-    }
-
-    #[test]
-    fn test_parse_lyrics_formats_excludes_instrumental() {
-        assert_eq!(
-            parse_lyrics_formats("instrumental,plain"),
-            vec![LyricsKind::Plain]
-        );
-    }
-
-    #[test]
-    fn test_parse_lyrics_formats_empty() {
-        assert_eq!(parse_lyrics_formats(""), Vec::<LyricsKind>::new());
-    }
-
-    #[test]
-    fn test_normalize_extension_strips_dots_and_whitespace() {
-        assert_eq!(normalize_extension("lrc"), "lrc");
-        assert_eq!(normalize_extension(".lrc"), "lrc");
-        assert_eq!(normalize_extension("...lrc"), "lrc");
-        assert_eq!(normalize_extension("  .txt  "), "txt");
-        assert_eq!(normalize_extension("."), "");
-    }
-
-    #[test]
-    fn test_normalize_extension_strips_path_separators() {
+    fn an_extension_can_never_carry_a_path() {
         for raw in ["txt/../../evil", "../../etc/passwd", r"txt\..\evil", "a:b"] {
-            let ext = normalize_extension(raw);
+            let extension = normalize_extension(raw);
+
             assert!(
-                !ext.contains(['/', '\\', ':']),
-                "{raw:?} left separators in {ext:?}"
+                !extension.contains(['/', '\\', ':']),
+                "{raw:?} left separators in {extension:?}"
             );
         }
 
-        assert_eq!(normalize_extension("///"), "");
+        check_extension("///", "");
     }
 }

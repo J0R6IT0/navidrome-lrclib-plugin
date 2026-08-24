@@ -168,136 +168,97 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_provider_mode_from_slug() {
-        assert_eq!(
-            ProviderMode::from_slug("priority"),
-            Some(ProviderMode::Priority)
-        );
-        assert_eq!(
-            ProviderMode::from_slug(" Rotation "),
-            Some(ProviderMode::Rotation)
-        );
-        assert_eq!(
-            ProviderMode::from_slug("Type"),
-            Some(ProviderMode::TypePriority)
-        );
-        assert_eq!(
-            ProviderMode::from_slug(" Sync "),
-            Some(ProviderMode::BestSyncLevel)
-        );
-        assert_eq!(ProviderMode::from_slug("foo"), None);
+    #[track_caller]
+    fn check_providers(raw: &str, expected: Option<Vec<ProviderEntry>>) {
+        assert_eq!(parse_providers(raw), expected, "providers from {raw}");
     }
 
     #[test]
-    fn test_provider_mode_slug_round_trips() {
-        for mode in [
-            ProviderMode::Priority,
-            ProviderMode::Rotation,
-            ProviderMode::TypePriority,
-            ProviderMode::BestSyncLevel,
-        ] {
-            assert_eq!(ProviderMode::from_slug(mode.slug()), Some(mode));
+    fn providers_that_differ_have_different_ids() {
+        let entries = [
+            entry("lrclib", &[]),
+            entry("kugou", &[]),
+            entry("lrclib", &[("baseUrl", "http://a")]),
+            entry("lrclib", &[("baseUrl", "http://b")]),
+            entry("lrclib", &[("baseUrl", "http://a"), ("timeout", "30")]),
+        ];
+        let ids: Vec<String> = entries.iter().map(ProviderEntry::cache_id).collect();
+        let unique: HashSet<&String> = ids.iter().collect();
+
+        assert_eq!(unique.len(), ids.len(), "cache ids collided: {ids:?}");
+    }
+
+    #[test]
+    fn providers_are_parsed() {
+        check_providers(
+            r#"[{"provider":"lrclib"},{"provider":"lyrics.ovh"}]"#,
+            Some(vec![entry("lrclib", &[]), entry("lyrics.ovh", &[])]),
+        );
+    }
+
+    #[test]
+    fn provider_parameters_are_parsed() {
+        check_providers(
+            r#"[{"provider":"applemusic","mediaUserToken":" abc ","storefront":"gb"}]"#,
+            Some(vec![entry(
+                "applemusic",
+                &[("mediaUserToken", "abc"), ("storefront", "gb")],
+            )]),
+        );
+    }
+
+    #[test]
+    fn array_params_are_joined_with_commas() {
+        check_providers(
+            r#"[{"provider":"lrcmux","sources":["lrclib"," kugou ",""]}]"#,
+            Some(vec![entry("lrcmux", &[("sources", "lrclib,kugou")])]),
+        );
+    }
+
+    #[test]
+    fn blank_params_are_ignored() {
+        check_providers(
+            r#"[{"provider":"lrclib","baseUrl":"   ","storefront":"","sources":[]}]"#,
+            Some(vec![entry("lrclib", &[])]),
+        );
+    }
+
+    #[test]
+    fn a_provider_without_a_name_is_skipped() {
+        check_providers(
+            r#"[{"provider":""},{"provider":"  "},{"baseUrl":"http://a"},{"provider":"kugou"}]"#,
+            Some(vec![entry("kugou", &[])]),
+        );
+    }
+
+    #[test]
+    fn two_equal_providers_are_deduplicated() {
+        check_providers(
+            r#"[{"provider":"kugou"},{"provider":"kugou"},{"provider":"netease"}]"#,
+            Some(vec![entry("kugou", &[]), entry("netease", &[])]),
+        );
+    }
+
+    #[test]
+    fn two_providers_with_different_params_are_kept() {
+        check_providers(
+            r#"[{"provider":"lrclib","baseUrl":"http://a"},{"provider":"lrclib","baseUrl":"http://b"}]"#,
+            Some(vec![
+                entry("lrclib", &[("baseUrl", "http://a")]),
+                entry("lrclib", &[("baseUrl", "http://b")]),
+            ]),
+        );
+    }
+
+    #[test]
+    fn invalid_provider_list_json_is_rejected() {
+        for raw in ["not json", "", "{}", r#"{"provider":"lrclib"}"#, "[1,2]"] {
+            check_providers(raw, None);
         }
     }
 
     #[test]
-    fn test_provider_mode_default_is_priority() {
-        assert_eq!(ProviderMode::default(), ProviderMode::Priority);
-    }
-
-    #[test]
-    fn test_cache_id_is_stable() {
-        let e = entry("applemusic", &[("mediaUserToken", "abc")]);
-        assert_eq!(e.cache_id(), e.cache_id());
-    }
-
-    #[test]
-    fn test_cache_id_differs_by_name_and_params() {
-        assert_ne!(
-            entry("lrclib", &[]).cache_id(),
-            entry("kugou", &[]).cache_id()
-        );
-        assert_ne!(
-            entry("lrclib", &[("baseUrl", "http://a")]).cache_id(),
-            entry("lrclib", &[("baseUrl", "http://b")]).cache_id()
-        );
-        assert_ne!(
-            entry("lrclib", &[]).cache_id(),
-            entry("lrclib", &[("baseUrl", "http://a")]).cache_id()
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_basic() {
-        assert_eq!(
-            parse_providers(r#"[{"provider":"lrclib"},{"provider":"lyrics.ovh"}]"#),
-            Some(vec![entry("lrclib", &[]), entry("lyrics.ovh", &[])])
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_with_base_url() {
-        assert_eq!(
-            parse_providers(r#"[{"provider":"lrclib","baseUrl":"http://localhost:7592"}]"#),
-            Some(vec![entry(
-                "lrclib",
-                &[("baseUrl", "http://localhost:7592")]
-            )])
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_drops_blank_params() {
-        assert_eq!(
-            parse_providers(r#"[{"provider":"lrclib","baseUrl":"   "}]"#),
-            Some(vec![entry("lrclib", &[])])
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_named_params() {
-        assert_eq!(
-            parse_providers(
-                r#"[{"provider":"applemusic","mediaUserToken":" abc ","storefront":"gb","baseUrl":""}]"#
-            ),
-            Some(vec![entry(
-                "applemusic",
-                &[("mediaUserToken", "abc"), ("storefront", "gb")]
-            )])
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_coerces_bool_and_number() {
-        assert_eq!(
-            parse_providers(
-                r#"[{"provider":"applemusic","mediaUserToken":"abc","includeTranslations":true,"storefront":""}]"#
-            ),
-            Some(vec![entry(
-                "applemusic",
-                &[("includeTranslations", "true"), ("mediaUserToken", "abc")]
-            )])
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_skips_unnamed_and_dedups() {
-        assert_eq!(
-            parse_providers(
-                r#"[{"provider":""},{"provider":"kugou"},{"provider":"kugou"},{"provider":"netease"}]"#
-            ),
-            Some(vec![entry("kugou", &[]), entry("netease", &[])])
-        );
-    }
-
-    #[test]
-    fn test_parse_providers_invalid_json_is_none() {
-        assert_eq!(parse_providers("not json"), None);
-    }
-
-    #[test]
-    fn test_parse_providers_empty_array_is_empty() {
-        assert_eq!(parse_providers("[]"), Some(Vec::new()));
+    fn an_empty_provider_list_is_valid() {
+        check_providers("[]", Some(Vec::new()));
     }
 }

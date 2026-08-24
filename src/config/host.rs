@@ -78,84 +78,112 @@ fn parse_f64(raw: &str) -> Option<f64> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_parse_bool_accepts_both_spellings() {
-        assert_eq!(parse_bool(" True "), Some(true));
-        assert_eq!(parse_bool("FALSE"), Some(false));
-        assert_eq!(parse_bool("1"), Some(true));
-        assert_eq!(parse_bool("0"), Some(false));
+    #[track_caller]
+    fn check_bool(raw: &str, expected: Option<bool>) {
+        assert_eq!(parse_bool(raw), expected, "boolean from {raw:?}");
+    }
+
+    #[track_caller]
+    fn check_i64(raw: &str, expected: Option<i64>) {
+        assert_eq!(parse_i64(raw), expected, "integer from {raw:?}");
+    }
+
+    #[track_caller]
+    fn check_i32(raw: &str, expected: Option<i32>) {
+        assert_eq!(parse_i32(raw), expected, "32-bit integer from {raw:?}");
+    }
+
+    #[track_caller]
+    fn check_f64(raw: &str, expected: Option<f64>) {
+        assert_eq!(parse_f64(raw), expected, "number from {raw:?}");
     }
 
     #[test]
-    fn test_parse_bool_garbage_is_none() {
-        assert_eq!(parse_bool("yes"), None);
-        assert_eq!(parse_bool("abc"), None);
-        assert_eq!(parse_bool(""), None);
+    fn parse_bool_accepts_valid_values() {
+        for (raw, expected) in [
+            ("true", true),
+            (" True ", true),
+            ("1", true),
+            ("false", false),
+            ("FALSE", false),
+            ("0", false),
+        ] {
+            check_bool(raw, Some(expected));
+        }
     }
 
     #[test]
-    fn test_parse_i64_accepts_integers() {
-        assert_eq!(parse_i64("336"), Some(336));
-        assert_eq!(parse_i64("-5"), Some(-5));
-        assert_eq!(parse_i64(&i64::MAX.to_string()), Some(i64::MAX));
+    fn parse_bool_rejects_invalid_values() {
+        for raw in ["yes", "no", "abc", "", "  "] {
+            check_bool(raw, None);
+        }
     }
 
     #[test]
-    fn test_parse_i64_overflow_saturates() {
-        assert_eq!(parse_i64("10000000000000000000000000"), Some(i64::MAX));
-        assert_eq!(parse_i64("-10000000000000000000000000"), Some(i64::MIN));
+    fn parse_i64_accepts_valid_values() {
+        for (raw, expected) in [("336", 336), (" 24 ", 24), ("\t-5\n", -5)] {
+            check_i64(raw, Some(expected));
+        }
+
+        check_i64(&i64::MAX.to_string(), Some(i64::MAX));
+        check_i64(&i64::MIN.to_string(), Some(i64::MIN));
     }
 
     #[test]
-    fn test_parse_i64_trims_whitespace() {
-        assert_eq!(parse_i64(" 24 "), Some(24));
-        assert_eq!(parse_i64("\t-5\n"), Some(-5));
+    fn parse_i64_saturates_on_overflow() {
+        check_i64("10000000000000000000000000", Some(i64::MAX));
+        check_i64("-10000000000000000000000000", Some(i64::MIN));
     }
 
     #[test]
-    fn test_parse_i64_garbage_is_none() {
-        assert_eq!(parse_i64("abc"), None);
-        assert_eq!(parse_i64(""), None);
-        assert_eq!(parse_i64("12x"), None);
+    fn parse_i32_accepts_valid_values() {
+        for (raw, expected) in [(" 42 ", 42), ("-7", -7)] {
+            check_i32(raw, Some(expected));
+        }
+
+        check_i32(&i32::MAX.to_string(), Some(i32::MAX));
+        check_i32(&i32::MIN.to_string(), Some(i32::MIN));
     }
 
     #[test]
-    fn test_parse_i32_narrows() {
-        assert_eq!(parse_i32(" 42 "), Some(42));
-        assert_eq!(parse_i32("-7"), Some(-7));
-        assert_eq!(parse_i32(&i32::MAX.to_string()), Some(i32::MAX));
+    fn parse_i32_rejects_values_outside_range() {
+        for raw in [
+            (i32::MAX as i64 + 1).to_string(),
+            (i32::MIN as i64 - 1).to_string(),
+            "10000000000000000000000000".to_string(),
+        ] {
+            check_i32(&raw, None);
+        }
+
+        check_i32(&i32::MAX.to_string(), Some(i32::MAX));
+        check_i32(&i32::MIN.to_string(), Some(i32::MIN));
     }
 
     #[test]
-    fn test_parse_i32_rejects_out_of_range() {
-        assert_eq!(parse_i32(&(i32::MAX as i64 + 1).to_string()), None);
-        assert_eq!(parse_i32(&(i32::MIN as i64 - 1).to_string()), None);
-        assert_eq!(parse_i32("10000000000000000000000000"), None);
+    fn parse_integer_rejects_invalid_values() {
+        for raw in ["abc", "", "  ", "12x", "1.5"] {
+            check_i64(raw, None);
+            check_i32(raw, None);
+        }
     }
 
     #[test]
-    fn test_parse_i32_garbage_is_none() {
-        assert_eq!(parse_i32("abc"), None);
-        assert_eq!(parse_i32(""), None);
+    fn parse_f64_accepts_finite_values() {
+        for (raw, expected) in [("3", 3.0), (" 2.5 ", 2.5), ("-0.5", -0.5)] {
+            check_f64(raw, Some(expected));
+        }
     }
 
     #[test]
-    fn test_parse_f64_accepts_fractions() {
-        assert_eq!(parse_f64("3"), Some(3.0));
-        assert_eq!(parse_f64(" 2.5 "), Some(2.5));
-        assert_eq!(parse_f64("-0.5"), Some(-0.5));
+    fn parse_f64_handles_overflow() {
+        check_f64("1e400", Some(f64::INFINITY));
+        check_f64("-1e400", Some(f64::NEG_INFINITY));
     }
 
     #[test]
-    fn test_parse_f64_overflow_is_infinite() {
-        assert_eq!(parse_f64("1e400"), Some(f64::INFINITY));
-        assert_eq!(parse_f64("-1e400"), Some(f64::NEG_INFINITY));
-    }
-
-    #[test]
-    fn test_parse_f64_rejects_nan_and_garbage() {
-        assert_eq!(parse_f64("nan"), None);
-        assert_eq!(parse_f64("abc"), None);
-        assert_eq!(parse_f64(""), None);
+    fn parse_f64_rejects_invalid_values() {
+        for raw in ["nan", "NaN", "abc", "", "  "] {
+            check_f64(raw, None);
+        }
     }
 }

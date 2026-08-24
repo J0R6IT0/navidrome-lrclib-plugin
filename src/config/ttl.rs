@@ -92,18 +92,67 @@ fn clamp(key: &str, raw: i64) -> i64 {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_max_ttl_fits_go_duration() {
-        let max_seconds = MAX_CACHE_TTL.saturating_mul(3600);
-        assert!(max_seconds.checked_mul(1_000_000_000).is_some());
+    #[track_caller]
+    fn check_kind_ttl(ttls: TypeCacheTtls, kind: LyricsKind, expected: i64) {
+        assert_eq!(ttls.get(kind), expected, "ttl for {kind:?}");
     }
 
     #[test]
-    fn test_default_ttls_favour_synced_formats() {
+    fn the_longest_ttl_still_fits_a_go_duration() {
+        let max_seconds = MAX_CACHE_TTL.saturating_mul(3600);
+
+        assert!(
+            max_seconds.checked_mul(1_000_000_000).is_some(),
+            "{MAX_CACHE_TTL}h overflows the nanoseconds a Go duration can hold"
+        );
+    }
+
+    #[test]
+    fn every_format_reads_back_the_ttl_it_was_given() {
+        let ttls = TypeCacheTtls {
+            plain: 1,
+            lrc: 2,
+            elrc: 3,
+            ttml: 4,
+            srt: 5,
+            lyricsfile: 6,
+            instrumental: 7,
+        };
+
+        for (kind, expected) in [
+            (LyricsKind::Plain, 1),
+            (LyricsKind::Lrc, 2),
+            (LyricsKind::Elrc, 3),
+            (LyricsKind::Ttml, 4),
+            (LyricsKind::Srt, 5),
+            (LyricsKind::Lyricsfile, 6),
+            (LyricsKind::Instrumental, 7),
+        ] {
+            check_kind_ttl(ttls, kind, expected);
+        }
+    }
+
+    #[test]
+    fn synced_formats_are_cached_longer_than_plain_text() {
         let ttls = TypeCacheTtls::default();
 
-        assert!(ttls.ttml > ttls.lrc);
-        assert!(ttls.elrc > ttls.lrc);
-        assert!(ttls.lrc > ttls.plain);
+        assert!(
+            ttls.ttml > ttls.lrc,
+            "ttml {}h, lrc {}h",
+            ttls.ttml,
+            ttls.lrc
+        );
+        assert!(
+            ttls.elrc > ttls.lrc,
+            "elrc {}h, lrc {}h",
+            ttls.elrc,
+            ttls.lrc
+        );
+        assert!(
+            ttls.lrc > ttls.plain,
+            "lrc {}h, plain {}h",
+            ttls.lrc,
+            ttls.plain
+        );
     }
 }
