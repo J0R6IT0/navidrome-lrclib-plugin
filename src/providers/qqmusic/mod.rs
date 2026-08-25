@@ -5,18 +5,14 @@ use crate::{
     config::{PluginConfig, ProviderParams},
     ext::TrackInfoExt,
     format::lrc,
-    providers::LyricsProvider,
+    providers::{LyricsProvider, ProviderResult, error::ProviderError, http::Http},
     types::{Lyrics, LyricsKind},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use extism_pdk::{info, warn};
-use nd_pdk::{
-    host::http::{self, HTTPRequest, HTTPResponse},
-    lyrics::{Error, TrackInfo},
-};
+use nd_pdk::lyrics::TrackInfo;
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::HashMap;
 
 mod qrc;
 
@@ -122,13 +118,13 @@ impl LyricsProvider for QQMusic {
         &[LyricsKind::Lrc, LyricsKind::Elrc]
     }
 
-    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
-        let first_artist = track
-            .first_artist()
-            .ok_or_else(|| Error::new("missing artist"))?;
-
-        let query = format!("{} {first_artist}", track.title);
-        let target_ms = (track.duration * 1000.0).round() as u64;
+    fn fetch_lyrics(
+        &self,
+        track: &TrackInfo,
+        cfg: &PluginConfig,
+    ) -> ProviderResult<Option<Lyrics>> {
+        let query = format!("{} {}", track.title, track.first_artist().unwrap());
+        let target_ms = track.duration_ms();
 
         let song = match find_song(&query, target_ms, cfg.duration_tolerance_ms())? {
             Some(s) => s,
@@ -174,7 +170,7 @@ impl LyricsProvider for QQMusic {
     }
 }
 
-fn find_song(query: &str, target_ms: u64, tolerance_ms: u64) -> Result<Option<Song>, Error> {
+fn find_song(query: &str, target_ms: u64, tolerance_ms: u64) -> ProviderResult<Option<Song>> {
     let param = SearchParam {
         search_id: random_search_id(),
         remoteplace: "search.android.keyboard",
@@ -237,7 +233,7 @@ fn parse_song(item: &Value) -> Option<Song> {
     })
 }
 
-fn fetch_lyric_content(song: &Song) -> Result<Option<String>, Error> {
+fn fetch_lyric_content(song: &Song) -> ProviderResult<Option<String>> {
     let param = LyricParam {
         album_name: STANDARD.encode(&song.album),
         crypt: 1,
@@ -288,7 +284,7 @@ fn fetch_lyric_content(song: &Song) -> Result<Option<String>, Error> {
     Ok(content)
 }
 
-fn api_request<P: Serialize>(module: &str, method: &str, param: &P) -> Result<Value, Error> {
+fn api_request<P: Serialize>(module: &str, method: &str, param: &P) -> ProviderResult<Value> {
     let body = serde_json::to_vec(&serde_json::json!({
         "comm": Common::new(),
         "request": {
@@ -297,19 +293,20 @@ fn api_request<P: Serialize>(module: &str, method: &str, param: &P) -> Result<Va
             "param": param,
         },
     }))
-    .map_err(|e| Error::new(format!("qqmusic: failed to encode request: {e}")))?;
+    .map_err(|e| ProviderError::other(format!("failed to encode the request: {e}")))?;
 
-    let response = send_request(body)?;
+    let response = Http::post(ENDPOINT)
+        .header("Content-Type", "application/json")
+        .header("Cookie", "tmeLoginType=-1;")
+        .header("User-Agent", CLIENT_USER_AGENT)
+        .body(body)
+        .send()?;
 
-    if response.status_code != 200 {
-        return Err(Error::new(format!(
-            "qqmusic: API returned status {}",
-            response.status_code
-        )));
+    if response.status != 200 {
+        return Err(response.unexpected_status("the API"));
     }
 
-    let parsed: Value = serde_json::from_slice(&response.body)
-        .map_err(|e| Error::new(format!("qqmusic: failed to parse API response: {e}")))?;
+    let parsed: Value = response.json("API")?;
 
     // The gateway reports a transport-level code at the top and a per-module code
     // inside the echoed `request` object. Both must be zero.
@@ -323,19 +320,19 @@ fn api_request<P: Serialize>(module: &str, method: &str, param: &P) -> Result<Va
         .unwrap_or_else(|| result.clone()))
 }
 
-fn check_code(value: &Value, module: &str, method: &str, level: &str) -> Result<(), Error> {
+fn check_code(value: &Value, module: &str, method: &str, level: &str) -> ProviderResult<()> {
     match value["code"].as_i64() {
         Some(0) => Ok(()),
         // 2001 means the endpoint rejected our client identity, either the `comm` block
         // or the headers no longer match the client it expects.
-        Some(2001) => Err(Error::new(format!(
-            "qqmusic: {module}.{method} rejected the client identity ({level} error code 2001), the 'comm' block or request headers are stale"
+        Some(2001) => Err(ProviderError::other(format!(
+            "{module}.{method} rejected the client identity ({level} error code 2001), the 'comm' block or request headers are stale"
         ))),
-        Some(code) => Err(Error::new(format!(
-            "qqmusic: {module}.{method} returned {level} error code {code}"
+        Some(code) => Err(ProviderError::other(format!(
+            "{module}.{method} returned {level} error code {code}"
         ))),
-        None => Err(Error::new(format!(
-            "qqmusic: {module}.{method} response missing {level} 'code' field"
+        None => Err(ProviderError::other(format!(
+            "{module}.{method} response missing {level} 'code' field"
         ))),
     }
 }
@@ -353,24 +350,6 @@ fn random_search_id() -> String {
     let low = (rnd >> 32) % 86_400_000;
 
     (prefix * 18_014_398_509_481_984 + middle * 4_294_967_296 + low).to_string()
-}
-
-fn send_request(body: Vec<u8>) -> Result<HTTPResponse, Error> {
-    let mut headers = HashMap::new();
-    headers.insert("Content-Type".into(), "application/json".into());
-    headers.insert("Cookie".into(), "tmeLoginType=-1;".into());
-    headers.insert("User-Agent".into(), CLIENT_USER_AGENT.into());
-
-    http::send(HTTPRequest {
-        url: ENDPOINT.into(),
-        method: "POST".into(),
-        headers,
-        no_follow_redirects: false,
-        body,
-        timeout_ms: 15_000,
-    })
-    .map_err(|e| Error::new(format!("qqmusic: HTTP request failed: {e}")))?
-    .ok_or_else(|| Error::new("qqmusic: received empty HTTP response"))
 }
 
 #[cfg(test)]

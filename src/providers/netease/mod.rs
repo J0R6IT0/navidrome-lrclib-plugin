@@ -2,16 +2,12 @@ use crate::{
     config::{PluginConfig, ProviderParams},
     ext::TrackInfoExt,
     format::lrc,
-    providers::{BROWSER_USER_AGENT, LyricsProvider},
+    providers::{LyricsProvider, ProviderResult, http::Http},
     types::{Lyrics, LyricsKind},
 };
 use extism_pdk::info;
-use nd_pdk::{
-    host::http::{self, HTTPRequest, HTTPResponse},
-    lyrics::{Error, TrackInfo},
-};
+use nd_pdk::lyrics::TrackInfo;
 use serde::Deserialize;
-use std::collections::HashMap;
 
 mod yrc;
 
@@ -76,13 +72,13 @@ impl LyricsProvider for NetEase {
         &[LyricsKind::Lrc, LyricsKind::Elrc]
     }
 
-    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
-        let first_artist = track
-            .first_artist()
-            .ok_or_else(|| Error::new("missing artist"))?;
-
-        let query = format!("{first_artist} {}", track.title);
-        let target_ms = (track.duration * 1000.0).round() as u64;
+    fn fetch_lyrics(
+        &self,
+        track: &TrackInfo,
+        cfg: &PluginConfig,
+    ) -> ProviderResult<Option<Lyrics>> {
+        let query = format!("{} {}", track.first_artist().unwrap(), track.title);
+        let target_ms = track.duration_ms();
 
         let song = match search_song(&query, target_ms, cfg.duration_tolerance_ms())? {
             Some(s) => s,
@@ -130,12 +126,15 @@ impl LyricsProvider for NetEase {
     }
 }
 
-fn search_song(query: &str, target_ms: u64, tolerance_ms: u64) -> Result<Option<Song>, Error> {
-    let qs =
-        serde_urlencoded::to_string([("s", query), ("type", "1"), ("limit", "5"), ("offset", "0")])
-            .map_err(|e| Error::new(format!("netease: failed to encode search query: {e}")))?;
-
-    let parsed: SearchResponse = get_json(SEARCH_URL, &qs, "search")?;
+fn search_song(query: &str, target_ms: u64, tolerance_ms: u64) -> ProviderResult<Option<Song>> {
+    let parsed: SearchResponse = get_json(
+        Http::get(SEARCH_URL)
+            .param("s", query)
+            .param("type", "1")
+            .param("limit", "5")
+            .param("offset", "0"),
+        "the search",
+    )?;
 
     Ok(parsed.result.songs.into_iter().find(|s| {
         s.duration_ms
@@ -144,17 +143,16 @@ fn search_song(query: &str, target_ms: u64, tolerance_ms: u64) -> Result<Option<
     }))
 }
 
-fn fetch_lyrics(song_id: u64) -> Result<LyricsResponse, Error> {
-    let qs = serde_urlencoded::to_string([
-        ("id", song_id.to_string()),
-        ("lv", "-1".to_string()),
-        ("kv", "-1".to_string()),
-        ("tv", "-1".to_string()),
-        ("yv", "1".to_string()),
-    ])
-    .map_err(|e| Error::new(format!("netease: failed to encode lyrics query: {e}")))?;
-
-    get_json(LYRICS_URL, &qs, "lyrics")
+fn fetch_lyrics(song_id: u64) -> ProviderResult<LyricsResponse> {
+    get_json(
+        Http::get(LYRICS_URL)
+            .param("id", song_id.to_string())
+            .param("lv", "-1")
+            .param("kv", "-1")
+            .param("tv", "-1")
+            .param("yv", "1"),
+        "the lyrics",
+    )
 }
 
 fn strip_metadata(lyric: &str) -> String {
@@ -165,39 +163,16 @@ fn strip_metadata(lyric: &str) -> String {
         .join("\n")
 }
 
-fn get_json<T: serde::de::DeserializeOwned>(
-    base_url: &str,
-    query: &str,
-    what: &str,
-) -> Result<T, Error> {
-    let response = send_request(&format!("{base_url}?{query}"))?;
+fn get_json<T: serde::de::DeserializeOwned>(request: Http, what: &str) -> ProviderResult<T> {
+    let response = request
+        .browser()
+        .header("Referer", "https://music.163.com")
+        .send()?;
 
-    if response.status_code != 200 {
-        return Err(Error::new(format!(
-            "netease: {what} returned status {}",
-            response.status_code
-        )));
+    match response.status {
+        200 => response.json(what),
+        _ => Err(response.unexpected_status(what)),
     }
-
-    serde_json::from_slice(&response.body)
-        .map_err(|e| Error::new(format!("netease: failed to parse {what} response: {e}")))
-}
-
-fn send_request(url: &str) -> Result<HTTPResponse, Error> {
-    let mut headers = HashMap::new();
-    headers.insert("User-Agent".into(), BROWSER_USER_AGENT.into());
-    headers.insert("Referer".into(), "https://music.163.com".into());
-
-    http::send(HTTPRequest {
-        url: url.into(),
-        method: "GET".into(),
-        headers,
-        no_follow_redirects: false,
-        body: Vec::new(),
-        timeout_ms: 15_000,
-    })
-    .map_err(|e| Error::new(format!("netease: HTTP request failed: {e}")))?
-    .ok_or_else(|| Error::new("netease: received empty HTTP response"))
 }
 
 #[cfg(test)]

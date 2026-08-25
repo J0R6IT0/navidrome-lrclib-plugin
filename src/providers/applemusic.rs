@@ -1,17 +1,11 @@
 use crate::{
     config::{PluginConfig, ProviderParams},
     ext::TrackInfoExt,
-    providers::{BROWSER_USER_AGENT, LyricsProvider},
+    providers::{LyricsProvider, ProviderResult, error::ProviderError, http::Http},
     types::{Lyrics, LyricsKind},
 };
 use extism_pdk::info;
-use nd_pdk::{
-    host::{
-        cache,
-        http::{self, HTTPRequest, HTTPResponse},
-    },
-    lyrics::{Error, TrackInfo},
-};
+use nd_pdk::{host::cache, lyrics::TrackInfo};
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -28,11 +22,11 @@ const STOREFRONT_TTL: i64 = 30 * 24 * 3600;
 
 enum LookupError {
     Unauthorized,
-    Fatal(Error),
+    Fatal(ProviderError),
 }
 
-impl From<Error> for LookupError {
-    fn from(e: Error) -> Self {
+impl From<ProviderError> for LookupError {
+    fn from(e: ProviderError) -> Self {
         LookupError::Fatal(e)
     }
 }
@@ -114,19 +108,19 @@ impl LyricsProvider for AppleMusic {
         &[LyricsKind::Ttml]
     }
 
-    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
+    fn fetch_lyrics(
+        &self,
+        track: &TrackInfo,
+        cfg: &PluginConfig,
+    ) -> ProviderResult<Option<Lyrics>> {
         let token = self.media_user_token.as_deref().ok_or_else(|| {
-            Error::new(
-                "applemusic: a media-user-token is required, configure it in the provider settings",
+            ProviderError::other(
+                "a media-user-token is required, configure it in the provider settings",
             )
         })?;
 
-        let first_artist = track
-            .first_artist()
-            .ok_or_else(|| Error::new("missing artist"))?;
-
-        let query = format!("{} {first_artist}", track.title);
-        let target_ms = (track.duration * 1000.0).round() as u64;
+        let query = format!("{} {}", track.title, track.first_artist().unwrap());
+        let target_ms = track.duration_ms();
         let tolerance_ms = cfg.duration_tolerance_ms();
 
         let dev_token = get_dev_token(false)?;
@@ -141,8 +135,8 @@ impl LyricsProvider for AppleMusic {
 
         result.map_err(|e| match e {
             LookupError::Fatal(e) => e,
-            LookupError::Unauthorized => Error::new(
-                "applemusic: authorization failed even after refreshing the developer token",
+            LookupError::Unauthorized => ProviderError::other(
+                "authorization failed even after refreshing the developer token",
             ),
         })
     }
@@ -226,7 +220,7 @@ impl AppleMusic {
     }
 }
 
-fn get_dev_token(force_refresh: bool) -> Result<String, Error> {
+fn get_dev_token(force_refresh: bool) -> ProviderResult<String> {
     if !force_refresh && let Ok(Some(token)) = cache::get_string(DEV_TOKEN_CACHE_KEY) {
         info!("applemusic: reusing cached developer token");
         return Ok(token);
@@ -247,43 +241,44 @@ fn storefront_cache_key(media_user_token: &str) -> String {
     format!("{STOREFRONT_CACHE_PREFIX}{hash:016x}")
 }
 
-fn fetch_dev_token() -> Result<String, Error> {
-    let home = send_request("https://music.apple.com/", &HashMap::new())?;
-    let html = String::from_utf8_lossy(&home.body);
+fn fetch_dev_token() -> ProviderResult<String> {
+    let home = Http::get("https://music.apple.com/").browser().send()?;
+    let html = home.text();
 
     let script_re =
         Regex::new(r#"<script type="module" crossorigin src="(/assets/index[^"]+\.js)""#)
-            .map_err(|e| Error::new(format!("applemusic: invalid script regex: {e}")))?;
+            .map_err(|e| ProviderError::other(format!("invalid script regex: {e}")))?;
 
     let script_path = script_re
         .captures(&html)
         .and_then(|c| c.get(1))
-        .ok_or_else(|| Error::new("applemusic: could not find index script tag"))?
+        .ok_or_else(|| ProviderError::other("could not find the index script tag"))?
         .as_str();
 
-    let script_url = format!("https://music.apple.com{script_path}");
-    let script = send_request(&script_url, &HashMap::new())?;
-    let js = String::from_utf8_lossy(&script.body);
+    let script = Http::get(format!("https://music.apple.com{script_path}"))
+        .browser()
+        .send()?;
+    let js = script.text();
 
     let var_re = Regex::new(r#"\.headers\.Authorization\s*=\s*`Bearer \$\{([A-Za-z0-9_$]+)\}`"#)
-        .map_err(|e| Error::new(format!("applemusic: invalid token var regex: {e}")))?;
+        .map_err(|e| ProviderError::other(format!("invalid token var regex: {e}")))?;
 
     let var_name = var_re
         .captures(&js)
         .and_then(|c| c.get(1))
-        .ok_or_else(|| Error::new("applemusic: could not find auth token variable"))?
+        .ok_or_else(|| ProviderError::other("could not find the auth token variable"))?
         .as_str();
 
     let value_re = Regex::new(&format!(
         r#"{}\s*=\s*"(eyJ[A-Za-z0-9._-]+)""#,
         regex::escape(var_name)
     ))
-    .map_err(|e| Error::new(format!("applemusic: invalid token value regex: {e}")))?;
+    .map_err(|e| ProviderError::other(format!("invalid token value regex: {e}")))?;
 
     let token = value_re
         .captures(&js)
         .and_then(|c| c.get(1))
-        .ok_or_else(|| Error::new("applemusic: could not find auth token value"))?
+        .ok_or_else(|| ProviderError::other("could not find the auth token value"))?
         .as_str();
 
     Ok(token.to_string())
@@ -293,21 +288,25 @@ fn fetch_storefront(
     dev_token: &str,
     media_user_token: &str,
 ) -> Result<Option<String>, LookupError> {
-    let headers = api_headers(dev_token, media_user_token);
-    let response = match send_request(STOREFRONT_URL, &headers) {
+    let response = match Http::get(STOREFRONT_URL)
+        .browser()
+        .headers(api_headers(dev_token, media_user_token))
+        .send()
+    {
         Ok(r) => r,
         Err(_) => return Ok(None),
     };
 
-    if is_unauthorized(response.status_code) {
+    if is_unauthorized(response.status) {
         return Err(LookupError::Unauthorized);
     }
 
-    if response.status_code != 200 {
+    if response.status != 200 {
         return Ok(None);
     }
 
-    Ok(serde_json::from_slice::<StorefrontResponse>(&response.body)
+    Ok(response
+        .json::<StorefrontResponse>("storefront")
         .ok()
         .and_then(|r| r.data.into_iter().next())
         .map(|e| e.id))
@@ -321,26 +320,22 @@ fn search_song(
     target_ms: u64,
     tolerance_ms: u64,
 ) -> Result<Option<Song>, LookupError> {
-    let qs = serde_urlencoded::to_string([("types", "songs"), ("term", query)])
-        .map_err(|e| Error::new(format!("applemusic: failed to encode search query: {e}")))?;
+    let response = Http::get(format!("{BASE_URL}/catalog/{storefront}/search"))
+        .param("types", "songs")
+        .param("term", query)
+        .browser()
+        .headers(api_headers(dev_token, media_user_token))
+        .send()?;
 
-    let url = format!("{BASE_URL}/catalog/{storefront}/search?{qs}");
-    let headers = api_headers(dev_token, media_user_token);
-    let response = send_request(&url, &headers)?;
-
-    if is_unauthorized(response.status_code) {
+    if is_unauthorized(response.status) {
         return Err(LookupError::Unauthorized);
     }
 
-    if response.status_code != 200 {
-        return Err(LookupError::Fatal(Error::new(format!(
-            "applemusic: search returned status {}",
-            response.status_code
-        ))));
+    if response.status != 200 {
+        return Err(LookupError::Fatal(response.unexpected_status("the search")));
     }
 
-    let parsed: SearchResponse = serde_json::from_slice(&response.body)
-        .map_err(|e| Error::new(format!("applemusic: failed to parse search response: {e}")))?;
+    let parsed: SearchResponse = response.json("search")?;
 
     let best = parsed
         .results
@@ -376,27 +371,26 @@ fn fetch_ttml(
     translation_language: Option<&str>,
     script: Option<&str>,
 ) -> Result<Option<Lyrics>, LookupError> {
-    let url = build_lyrics_url(storefront, song_id, translation_language, script)?;
-    let headers = api_headers(dev_token, media_user_token);
-    let response = send_request(&url, &headers)?;
+    let response = lyrics_request(storefront, song_id, translation_language, script)
+        .browser()
+        .headers(api_headers(dev_token, media_user_token))
+        .send()?;
 
-    if response.status_code == 404 {
+    if response.status == 404 {
         return Ok(None);
     }
 
-    if is_unauthorized(response.status_code) {
+    if is_unauthorized(response.status) {
         return Err(LookupError::Unauthorized);
     }
 
-    if response.status_code != 200 {
-        return Err(LookupError::Fatal(Error::new(format!(
-            "applemusic: lyrics endpoint returned status {}",
-            response.status_code
-        ))));
+    if response.status != 200 {
+        return Err(LookupError::Fatal(
+            response.unexpected_status("the lyrics endpoint"),
+        ));
     }
 
-    let parsed: LyricsResponse = serde_json::from_slice(&response.body)
-        .map_err(|e| Error::new(format!("applemusic: failed to parse lyrics response: {e}")))?;
+    let parsed: LyricsResponse = response.json("lyrics")?;
 
     let ttml = parsed
         .data
@@ -408,87 +402,101 @@ fn fetch_ttml(
     Ok(ttml.map(Lyrics::Ttml))
 }
 
-fn build_lyrics_url(
+fn lyrics_request(
     storefront: &str,
     song_id: &str,
     translation_language: Option<&str>,
     script: Option<&str>,
-) -> Result<String, Error> {
-    let base = format!("{BASE_URL}/catalog/{storefront}/songs/{song_id}/syllable-lyrics");
+) -> Http {
+    let mut request = Http::get(format!(
+        "{BASE_URL}/catalog/{storefront}/songs/{song_id}/syllable-lyrics"
+    ));
 
     if translation_language.is_none() && script.is_none() {
-        return Ok(base);
+        return request;
     }
 
-    let mut params: Vec<(&str, &str)> = vec![("extend", "ttmlLocalizations")];
+    request = request.param("extend", "ttmlLocalizations");
     if let Some(lang) = translation_language {
-        params.push(("l[lyrics]", lang));
+        request = request.param("l[lyrics]", lang);
     }
     if let Some(script) = script {
-        params.push(("l[script]", script));
+        request = request.param("l[script]", script);
     }
 
-    let qs = serde_urlencoded::to_string(&params)
-        .map_err(|e| Error::new(format!("applemusic: failed to encode lyrics query: {e}")))?;
-
-    Ok(format!("{base}?{qs}"))
+    request
 }
 
 fn api_headers(dev_token: &str, media_user_token: &str) -> HashMap<String, String> {
-    let mut headers = HashMap::new();
-    headers.insert("Authorization".into(), format!("Bearer {dev_token}"));
-    headers.insert("User-Agent".into(), BROWSER_USER_AGENT.into());
-    headers.insert("Origin".into(), "https://music.apple.com".into());
-    headers.insert("Referer".into(), "https://music.apple.com".into());
-    headers.insert("media-user-token".into(), media_user_token.into());
-    headers
-}
-
-fn send_request(url: &str, headers: &HashMap<String, String>) -> Result<HTTPResponse, Error> {
-    let mut headers = headers.clone();
-    headers
-        .entry("User-Agent".into())
-        .or_insert_with(|| BROWSER_USER_AGENT.into());
-
-    http::send(HTTPRequest {
-        url: url.into(),
-        method: "GET".into(),
-        headers,
-        no_follow_redirects: false,
-        body: Vec::new(),
-        timeout_ms: 15_000,
-    })
-    .map_err(|e| Error::new(format!("applemusic: HTTP request failed: {e}")))?
-    .ok_or_else(|| Error::new("applemusic: received empty HTTP response"))
+    HashMap::from([
+        ("Authorization".into(), format!("Bearer {dev_token}")),
+        ("Origin".into(), "https://music.apple.com".into()),
+        ("Referer".into(), "https://music.apple.com".into()),
+        ("media-user-token".into(), media_user_token.into()),
+    ])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_build_lyrics_url_plain() {
+    #[track_caller]
+    fn check_lyrics_url(
+        storefront: &str,
+        translation_language: Option<&str>,
+        script: Option<&str>,
+        expected: &str,
+    ) {
+        let url = lyrics_request(storefront, "123", translation_language, script)
+            .url()
+            .unwrap();
+
         assert_eq!(
-            build_lyrics_url("us", "123", None, None).unwrap(),
-            "https://amp-api.music.apple.com/v1/catalog/us/songs/123/syllable-lyrics"
+            url, expected,
+            "{storefront} with {translation_language:?} and {script:?}"
         );
     }
 
     #[test]
-    fn test_build_lyrics_url_translation() {
-        assert_eq!(
-            build_lyrics_url("us", "123", Some("en-US"), None).unwrap(),
-            "https://amp-api.music.apple.com/v1/catalog/us/songs/123/syllable-lyrics\
-             ?extend=ttmlLocalizations&l%5Blyrics%5D=en-US"
+    fn a_lyrics_request_without_extras_is_a_bare_url() {
+        check_lyrics_url(
+            "us",
+            None,
+            None,
+            "https://amp-api.music.apple.com/v1/catalog/us/songs/123/syllable-lyrics",
         );
     }
 
     #[test]
-    fn test_build_lyrics_url_script() {
-        assert_eq!(
-            build_lyrics_url("us", "123", None, Some("und-Latn")).unwrap(),
+    fn a_translation_asks_for_the_localizations_extension() {
+        check_lyrics_url(
+            "us",
+            Some("en-US"),
+            None,
             "https://amp-api.music.apple.com/v1/catalog/us/songs/123/syllable-lyrics\
-             ?extend=ttmlLocalizations&l%5Bscript%5D=und-Latn"
+             ?extend=ttmlLocalizations&l%5Blyrics%5D=en-US",
+        );
+    }
+
+    #[test]
+    fn a_romanization_asks_for_the_script_instead() {
+        check_lyrics_url(
+            "us",
+            None,
+            Some("und-Latn"),
+            "https://amp-api.music.apple.com/v1/catalog/us/songs/123/syllable-lyrics\
+             ?extend=ttmlLocalizations&l%5Bscript%5D=und-Latn",
+        );
+    }
+
+    #[test]
+    fn a_translation_and_a_romanization_travel_together() {
+        check_lyrics_url(
+            "gb",
+            Some("es-ES"),
+            Some("und-Latn"),
+            "https://amp-api.music.apple.com/v1/catalog/gb/songs/123/syllable-lyrics\
+             ?extend=ttmlLocalizations&l%5Blyrics%5D=es-ES&l%5Bscript%5D=und-Latn",
         );
     }
 
@@ -530,14 +538,5 @@ mod tests {
 
         let unknown = song_with_duration(None);
         assert!(duration_diff(&unknown, target) > tolerance_ms);
-    }
-
-    #[test]
-    fn test_build_lyrics_url_translation_and_script() {
-        assert_eq!(
-            build_lyrics_url("gb", "123", Some("es-ES"), Some("und-Latn")).unwrap(),
-            "https://amp-api.music.apple.com/v1/catalog/gb/songs/123/syllable-lyrics\
-             ?extend=ttmlLocalizations&l%5Blyrics%5D=es-ES&l%5Bscript%5D=und-Latn"
-        );
     }
 }

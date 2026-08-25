@@ -1,16 +1,12 @@
 use crate::{
     config::{PluginConfig, ProviderParams},
     ext::TrackInfoExt,
-    providers::{LyricsProvider, USER_AGENT},
+    providers::{LyricsProvider, ProviderResult, http::Http},
     types::{Lyrics, LyricsKind},
 };
-use nd_pdk::{
-    host::http::{self, HTTPRequest, HTTPResponse},
-    lyrics::{Error, TrackInfo},
-};
+use nd_pdk::lyrics::TrackInfo;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
-use std::collections::HashMap;
 
 const DEFAULT_BASE_URL: &str = "https://api.lyrics.ovh";
 
@@ -47,89 +43,87 @@ impl LyricsProvider for LyricsOvh {
         &self,
         track: &TrackInfo,
         _cfg: &PluginConfig,
-    ) -> Result<Option<Lyrics>, Error> {
-        let first_artist = track
-            .first_artist()
-            .ok_or_else(|| Error::new("missing artist"))?;
+    ) -> ProviderResult<Option<Lyrics>> {
+        let first_artist = track.first_artist().unwrap();
+        let url = search_url(&self.base_url, first_artist, &track.title);
+        let response = Http::get(url).send()?;
 
-        let url = build_search_url(&self.base_url, first_artist, &track.title);
-        let response = send_request(&url)?;
+        match response.status {
+            200 => {
+                let body: ApiResponse = response.json("lyrics")?;
+                if body.lyrics.trim().is_empty() {
+                    return Ok(None);
+                }
 
-        if response.status_code == 404 {
-            return Ok(None);
+                Ok(Some(Lyrics::Plain(body.lyrics)))
+            }
+            404 => Ok(None),
+            _ => Err(response.unexpected_status("lyrics.ovh")),
         }
-
-        if response.status_code != 200 {
-            return Err(Error::new(format!(
-                "lyrics.ovh returned unexpected status {}",
-                response.status_code
-            )));
-        }
-
-        let body: ApiResponse = serde_json::from_slice(&response.body)
-            .map_err(|e| Error::new(format!("failed to parse lyrics.ovh response: {e}")))?;
-
-        if body.lyrics.trim().is_empty() {
-            return Ok(None);
-        }
-
-        Ok(Some(Lyrics::Plain(body.lyrics)))
     }
 }
 
-fn build_search_url(base_url: &str, artist: &str, title: &str) -> String {
-    let encoded_artist = utf8_percent_encode(artist, NON_ALPHANUMERIC).to_string();
-    let encoded_title = utf8_percent_encode(title, NON_ALPHANUMERIC).to_string();
-    format!("{base_url}/v1/{encoded_artist}/{encoded_title}")
-}
-
-fn send_request(url: &str) -> Result<HTTPResponse, Error> {
-    let mut headers = HashMap::new();
-    headers.insert("User-Agent".into(), USER_AGENT.into());
-
-    http::send(HTTPRequest {
-        url: url.into(),
-        method: "GET".into(),
-        headers,
-        no_follow_redirects: false,
-        body: Vec::new(),
-        timeout_ms: 15_000,
-    })
-    .map_err(|e| Error::new(format!("HTTP request to lyrics.ovh failed: {e}")))?
-    .ok_or_else(|| Error::new("received empty HTTP response from lyrics.ovh"))
+fn search_url(base_url: &str, artist: &str, title: &str) -> String {
+    let encode = |s: &str| utf8_percent_encode(s, NON_ALPHANUMERIC).to_string();
+    format!("{base_url}/v1/{}/{}", encode(artist), encode(title))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_build_search_url_simple() {
-        let url = build_search_url(DEFAULT_BASE_URL, "The Beatles", "Hey Jude");
-        assert_eq!(url, "https://api.lyrics.ovh/v1/The%20Beatles/Hey%20Jude");
+    #[track_caller]
+    fn check_url(base_url: &str, artist: &str, title: &str, expected: &str) {
+        assert_eq!(
+            search_url(base_url, artist, title),
+            expected,
+            "{artist:?} - {title:?} on {base_url}"
+        );
     }
 
     #[test]
-    fn test_build_search_url_special_chars() {
-        let url = build_search_url(DEFAULT_BASE_URL, "AC/DC", "Back in Black");
-        assert_eq!(url, "https://api.lyrics.ovh/v1/AC%2FDC/Back%20in%20Black");
+    fn a_search_names_the_artist_and_the_title_in_the_path() {
+        check_url(
+            DEFAULT_BASE_URL,
+            "The Beatles",
+            "Hey Jude",
+            "https://api.lyrics.ovh/v1/The%20Beatles/Hey%20Jude",
+        );
     }
 
     #[test]
-    fn test_build_search_url_unicode() {
-        let url = build_search_url(DEFAULT_BASE_URL, "Björk", "Hyperballad");
-        assert_eq!(url, "https://api.lyrics.ovh/v1/Bj%C3%B6rk/Hyperballad");
+    fn a_name_can_never_open_a_path_segment_of_its_own() {
+        check_url(
+            DEFAULT_BASE_URL,
+            "AC/DC",
+            "Back in Black",
+            "https://api.lyrics.ovh/v1/AC%2FDC/Back%20in%20Black",
+        );
+        check_url(
+            DEFAULT_BASE_URL,
+            "../../etc",
+            "passwd",
+            "https://api.lyrics.ovh/v1/%2E%2E%2F%2E%2E%2Fetc/passwd",
+        );
     }
 
     #[test]
-    fn test_build_search_url_custom_base() {
-        let url = build_search_url("http://localhost:8080", "Artist", "Title");
-        assert_eq!(url, "http://localhost:8080/v1/Artist/Title");
+    fn a_name_outside_ascii_travels_as_utf8() {
+        check_url(
+            DEFAULT_BASE_URL,
+            "Björk",
+            "Hyperballad",
+            "https://api.lyrics.ovh/v1/Bj%C3%B6rk/Hyperballad",
+        );
     }
 
     #[test]
-    fn test_build_search_url_empty_artist() {
-        let url = build_search_url(DEFAULT_BASE_URL, "", "Title");
-        assert_eq!(url, "https://api.lyrics.ovh/v1//Title");
+    fn a_self_hosted_mirror_keeps_the_same_path() {
+        check_url(
+            "http://localhost:8080",
+            "Artist",
+            "Title",
+            "http://localhost:8080/v1/Artist/Title",
+        );
     }
 }

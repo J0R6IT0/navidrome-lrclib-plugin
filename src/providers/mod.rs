@@ -1,14 +1,16 @@
 use crate::{
     config::PluginConfig,
     providers::{
-        applemusic::AppleMusic, kugou::Kugou, lrclib::Lrclib, lrcmux::LrcMux, lyricsovh::LyricsOvh,
-        netease::NetEase, qqmusic::QQMusic, stixoi::Stixoi,
+        applemusic::AppleMusic, error::ProviderResult, kugou::Kugou, lrclib::Lrclib,
+        lrcmux::Lrcmux, lyricsovh::LyricsOvh, netease::NetEase, qqmusic::QQMusic, stixoi::Stixoi,
     },
     types::{Lyrics, LyricsKind},
 };
-use nd_pdk::lyrics::{Error, TrackInfo};
+use nd_pdk::lyrics::TrackInfo;
 
 mod applemusic;
+pub mod error;
+mod http;
 mod kugou;
 mod lrclib;
 mod lrcmux;
@@ -32,7 +34,7 @@ const BROWSER_USER_AGENT: &str =
 pub fn register_providers(registry: &mut ProviderRegistry) {
     registry.register("lrclib", Lrclib::create);
     registry.register("lyrics.ovh", LyricsOvh::create);
-    registry.register("lrcmux", LrcMux::create);
+    registry.register("lrcmux", Lrcmux::create);
     registry.register("kugou", Kugou::create);
     registry.register("netease", NetEase::create);
     registry.register("qqmusic", QQMusic::create);
@@ -43,7 +45,8 @@ pub fn register_providers(registry: &mut ProviderRegistry) {
 pub trait LyricsProvider {
     fn supported_kinds(&self) -> &'static [LyricsKind];
 
-    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error>;
+    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig)
+    -> ProviderResult<Option<Lyrics>>;
 
     /// Configuration parameters worth including in logs, as `(key, value)` pairs.
     /// Never return a token, cookie or any other credential here.

@@ -1,13 +1,10 @@
 use crate::{
     config::{PluginConfig, ProviderParams},
     ext::TrackInfoExt,
-    providers::{BROWSER_USER_AGENT, LyricsProvider},
+    providers::{LyricsProvider, ProviderResult, error::ProviderError, http::Http},
     types::{Lyrics, LyricsKind},
 };
-use nd_pdk::{
-    host::http::{self, HTTPRequest, HTTPResponse},
-    lyrics::{Error, TrackInfo},
-};
+use nd_pdk::lyrics::TrackInfo;
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -59,7 +56,7 @@ impl LyricsProvider for Stixoi {
         &self,
         track: &TrackInfo,
         _cfg: &PluginConfig,
-    ) -> Result<Option<Lyrics>, Error> {
+    ) -> ProviderResult<Option<Lyrics>> {
         let title = strip_parens(&track.title);
         if title.is_empty() {
             return Ok(None);
@@ -88,7 +85,12 @@ impl LyricsProvider for Stixoi {
 }
 
 impl Stixoi {
-    fn find_lyrics(&self, query: &str, title: &str, artist: &str) -> Result<Option<String>, Error> {
+    fn find_lyrics(
+        &self,
+        query: &str,
+        title: &str,
+        artist: &str,
+    ) -> ProviderResult<Option<String>> {
         let ids = self.search_ids(query)?;
 
         let mut fallback: Option<String> = None;
@@ -115,23 +117,21 @@ impl Stixoi {
         Ok(fallback)
     }
 
-    fn search_ids(&self, query: &str) -> Result<Vec<String>, Error> {
-        let qs = serde_urlencoded::to_string([("q", query), ("scope", "songs")])
-            .map_err(|e| Error::new(format!("stixoi: failed to encode search query: {e}")))?;
+    fn search_ids(&self, query: &str) -> ProviderResult<Vec<String>> {
+        let response = self
+            .request(format!("{BASE_URL}/search"))
+            .param("q", query)
+            .param("scope", "songs")
+            .send()?;
 
-        let response = self.send_request(&format!("{BASE_URL}/search?{qs}"))?;
-
-        if response.status_code != 200 {
-            return Err(Error::new(format!(
-                "stixoi: search returned status {}",
-                response.status_code
-            )));
+        if response.status != 200 {
+            return Err(response.unexpected_status("the search"));
         }
 
-        let body = String::from_utf8_lossy(&response.body);
+        let body = response.text();
 
         let re = Regex::new(r#""href":"/songs/(\d+)""#)
-            .map_err(|e| Error::new(format!("stixoi: invalid song link regex: {e}")))?;
+            .map_err(|e| ProviderError::other(format!("invalid song link regex: {e}")))?;
 
         let mut ids = Vec::new();
         for cap in re.captures_iter(&body) {
@@ -146,49 +146,29 @@ impl Stixoi {
         Ok(ids)
     }
 
-    fn fetch_song(&self, id: &str) -> Result<Option<SongPage>, Error> {
-        let response = self.send_request(&format!("{BASE_URL}/songs/{id}"))?;
+    fn fetch_song(&self, id: &str) -> ProviderResult<Option<SongPage>> {
+        let response = self.request(format!("{BASE_URL}/songs/{id}")).send()?;
 
-        if response.status_code == 404 {
-            return Ok(None);
+        match response.status {
+            200 => {}
+            404 => return Ok(None),
+            _ => return Err(response.unexpected_status("the song page")),
         }
 
-        if response.status_code != 200 {
-            return Err(Error::new(format!(
-                "stixoi: song page returned status {}",
-                response.status_code
-            )));
-        }
-
-        let body = String::from_utf8_lossy(&response.body);
+        let body = response.text();
         let anchor = format!(r#""song":{{"id":{id}"#);
 
-        let obj = match extract_json_object(&body, &anchor) {
-            Some(obj) => obj,
-            None => return Ok(None),
+        let Some(obj) = extract_json_object(&body, &anchor) else {
+            return Ok(None);
         };
 
-        let song: SongPage = serde_json::from_str(obj)
-            .map_err(|e| Error::new(format!("stixoi: failed to parse song payload: {e}")))?;
-
-        Ok(Some(song))
+        serde_json::from_str(obj)
+            .map(Some)
+            .map_err(|e| ProviderError::other(format!("failed to parse the song payload: {e}")))
     }
 
-    fn send_request(&self, url: &str) -> Result<HTTPResponse, Error> {
-        let mut headers = std::collections::HashMap::new();
-        headers.insert("User-Agent".into(), BROWSER_USER_AGENT.into());
-        headers.insert("RSC".into(), "1".into());
-
-        http::send(HTTPRequest {
-            url: url.into(),
-            method: "GET".into(),
-            headers,
-            no_follow_redirects: false,
-            body: Vec::new(),
-            timeout_ms: 15_000,
-        })
-        .map_err(|e| Error::new(format!("stixoi: HTTP request failed: {e}")))?
-        .ok_or_else(|| Error::new("stixoi: received empty HTTP response"))
+    fn request(&self, url: String) -> Http {
+        Http::get(url).browser().header("RSC", "1")
     }
 }
 

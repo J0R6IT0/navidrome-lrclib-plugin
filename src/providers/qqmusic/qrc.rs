@@ -68,7 +68,7 @@ pub fn decrypt(hex: &str) -> Result<String, String> {
     let schedule = triple_des_key_setup(QRC_KEY, DECRYPT);
 
     let mut data = Vec::with_capacity(bytes.len());
-    for block in bytes.chunks_exact(8) {
+    for block in bytes.as_chunks::<8>().0 {
         let mut input = [0u8; 8];
         input.copy_from_slice(block);
         data.extend_from_slice(&triple_des_crypt(&input, &schedule));
@@ -184,7 +184,9 @@ fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
         return Err("qrc payload is not valid hex (odd length)".to_string());
     }
 
-    hex.chunks_exact(2)
+    hex.as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
             let hi = (pair[0] as char).to_digit(16);
             let lo = (pair[1] as char).to_digit(16);

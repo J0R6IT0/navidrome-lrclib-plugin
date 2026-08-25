@@ -2,22 +2,21 @@ use crate::{
     config::{PluginConfig, ProviderParams},
     ext::TrackInfoExt,
     format::{elrc, lrc},
-    providers::{LyricsProvider, USER_AGENT},
+    providers::{LyricsProvider, ProviderResult, error::ProviderError, http::Http},
     types::{Lyrics, LyricsKind},
 };
-use nd_pdk::{
-    host::http::{self, HTTPRequest, HTTPResponse},
-    lyrics::{Error, TrackInfo},
-};
+use nd_pdk::lyrics::TrackInfo;
 use serde::Deserialize;
-use std::collections::HashMap;
 
 const DEFAULT_BASE_URL: &str = "https://api.lrcmux.dev";
+
+const KNOWN_SOURCES: &[&str] = &["genius", "kugou", "musixmatch", "netease", "ytmusic"];
 
 #[derive(Deserialize)]
 struct JsonResponse {
     meta: JsonMeta,
-    lines: Option<Vec<Line>>,
+    #[serde(default)]
+    lines: Vec<Line>,
 }
 
 #[derive(Deserialize)]
@@ -50,14 +49,12 @@ struct Word {
     end: Option<i64>,
 }
 
-const KNOWN_SOURCES: &[&str] = &["genius", "kugou", "musixmatch", "netease", "ytmusic"];
-
-pub struct LrcMux {
+pub struct Lrcmux {
     base_url: String,
     sources: Option<String>,
 }
 
-impl LrcMux {
+impl Lrcmux {
     pub fn create(params: &ProviderParams) -> Box<dyn LyricsProvider> {
         Box::new(Self {
             base_url: params
@@ -67,6 +64,75 @@ impl LrcMux {
             sources: restrict_sources(params.get("sources")),
         })
     }
+
+    fn get(&self, track: &TrackInfo) -> ProviderResult<Option<JsonResponse>> {
+        let mut request = Http::get(format!("{}/get", self.base_url))
+            .param("artist", track.first_artist().unwrap_or_default())
+            .param("title", &track.title)
+            .param("album", &track.album)
+            .param("duration", track.duration_secs().to_string());
+
+        if let Some(sources) = &self.sources {
+            request = request.param("sources", sources);
+        }
+
+        let response = request.send()?;
+
+        match response.status {
+            200 => response.json("get").map(Some),
+            404 => Ok(None),
+            429 => Err(response.rate_limited()),
+            _ => Err(response.unexpected_status("lrcmux")),
+        }
+    }
+}
+
+impl LyricsProvider for Lrcmux {
+    fn supported_kinds(&self) -> &'static [LyricsKind] {
+        &[LyricsKind::Elrc, LyricsKind::Lrc, LyricsKind::Plain]
+    }
+
+    fn log_params(&self) -> Vec<(&'static str, String)> {
+        let mut params = vec![("baseUrl", self.base_url.clone())];
+        if let Some(sources) = &self.sources {
+            params.push(("sources", sources.clone()));
+        }
+        params
+    }
+
+    fn fetch_lyrics(
+        &self,
+        track: &TrackInfo,
+        cfg: &PluginConfig,
+    ) -> ProviderResult<Option<Lyrics>> {
+        if !track.has_artist() {
+            return Err(ProviderError::other("track has no artist"));
+        }
+
+        Ok(self
+            .get(track)?
+            .and_then(|response| pick_lyrics(response, &cfg.lyrics_type_priority)))
+    }
+}
+
+fn pick_lyrics(response: JsonResponse, order: &[LyricsKind]) -> Option<Lyrics> {
+    if response.meta.instrumental {
+        return Some(Lyrics::Instrumental);
+    }
+
+    let level = response.meta.level;
+    let lines = response.lines;
+
+    order.iter().find_map(|kind| match kind {
+        LyricsKind::Elrc if level == SyncLevel::Word => Some(build_elrc(&lines))
+            .filter(|s| !s.is_empty())
+            .map(Lyrics::Elrc),
+        LyricsKind::Lrc if level != SyncLevel::None => Some(build_lrc(&lines))
+            .filter(|s| !s.is_empty())
+            .map(Lyrics::Lrc),
+        LyricsKind::Plain => Some(Lyrics::Plain(build_plain(&lines))),
+        _ => None,
+    })
 }
 
 fn restrict_sources(configured: Option<&str>) -> Option<String> {
@@ -80,97 +146,6 @@ fn restrict_sources(configured: Option<&str>) -> Option<String> {
         return None;
     }
     Some(picked.join(","))
-}
-
-impl LyricsProvider for LrcMux {
-    fn supported_kinds(&self) -> &'static [LyricsKind] {
-        &[LyricsKind::Elrc, LyricsKind::Lrc, LyricsKind::Plain]
-    }
-
-    fn log_params(&self) -> Vec<(&'static str, String)> {
-        let mut params = vec![("baseUrl", self.base_url.clone())];
-        if let Some(sources) = &self.sources {
-            params.push(("sources", sources.clone()));
-        }
-        params
-    }
-
-    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error> {
-        let first_artist = track
-            .first_artist()
-            .ok_or_else(|| Error::new("missing artist"))?;
-
-        let duration = track.duration.round() as i64;
-
-        let duration = duration.to_string();
-        let mut query = vec![
-            ("artist", first_artist),
-            ("title", track.title.as_str()),
-            ("album", track.album.as_str()),
-            ("duration", duration.as_str()),
-        ];
-        if let Some(sources) = &self.sources {
-            query.push(("sources", sources.as_str()));
-        }
-
-        let qs = serde_urlencoded::to_string(&query)
-            .map_err(|e| Error::new(format!("lrcmux: failed to encode query: {e}")))?;
-
-        let response = send_request(&format!("{}/get?{qs}", self.base_url))?;
-
-        match response.status_code {
-            200 => {
-                let parsed: JsonResponse = serde_json::from_slice(&response.body)
-                    .map_err(|e| Error::new(format!("lrcmux: failed to parse response: {e}")))?;
-
-                if parsed.meta.instrumental {
-                    return Ok(Some(Lyrics::Instrumental));
-                }
-
-                let level = parsed.meta.level;
-                let lines = parsed.lines.unwrap_or_default();
-
-                for &kind in &cfg.lyrics_type_priority {
-                    match kind {
-                        LyricsKind::Elrc => {
-                            if level != SyncLevel::Word {
-                                continue;
-                            }
-                            let elrc = build_elrc(&lines);
-                            if elrc.is_empty() {
-                                continue;
-                            }
-                            return Ok(Some(Lyrics::Elrc(elrc)));
-                        }
-                        LyricsKind::Lrc => {
-                            if level == SyncLevel::None {
-                                continue;
-                            }
-                            let lrc = build_lrc(&lines);
-                            if lrc.is_empty() {
-                                continue;
-                            }
-                            return Ok(Some(Lyrics::Lrc(lrc)));
-                        }
-                        LyricsKind::Plain => {
-                            let text = lines
-                                .iter()
-                                .map(|l| l.text.as_str())
-                                .collect::<Vec<_>>()
-                                .join("\n");
-                            return Ok(Some(Lyrics::Plain(text)));
-                        }
-                        _ => {}
-                    }
-                }
-                Ok(None)
-            }
-            404 => Ok(None),
-            code => Err(Error::new(format!(
-                "lrcmux: returned unexpected status {code}"
-            ))),
-        }
-    }
 }
 
 fn timed_words(line: &Line, words: &[Word]) -> Vec<elrc::Word> {
@@ -205,28 +180,118 @@ fn build_lrc(lines: &[Line]) -> String {
         .join("\n")
 }
 
-fn send_request(url: &str) -> Result<HTTPResponse, Error> {
-    let mut headers = HashMap::new();
-    headers.insert("User-Agent".into(), USER_AGENT.into());
-
-    http::send(HTTPRequest {
-        url: url.into(),
-        method: "GET".into(),
-        headers,
-        no_follow_redirects: false,
-        body: Vec::new(),
-        timeout_ms: 15_000,
-    })
-    .map_err(|e| Error::new(format!("lrcmux: HTTP request failed: {e}")))?
-    .ok_or_else(|| Error::new("lrcmux: received empty response"))
+fn build_plain(lines: &[Line]) -> String {
+    lines
+        .iter()
+        .map(|l| l.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn word(text: &str, start: i64, end: i64) -> Word {
+        Word {
+            text: text.into(),
+            start,
+            end: Some(end),
+        }
+    }
+
+    fn synced_line() -> Line {
+        Line {
+            text: "hello world".into(),
+            start: Some(1000),
+            end: Some(3000),
+            words: Some(vec![word("hello", 1000, 2000), word("world", 2000, 3000)]),
+        }
+    }
+
+    fn response(level: SyncLevel, instrumental: bool, lines: Vec<Line>) -> JsonResponse {
+        JsonResponse {
+            meta: JsonMeta {
+                level,
+                instrumental,
+            },
+            lines,
+        }
+    }
+
+    #[track_caller]
+    fn check_pick(response: JsonResponse, order: &[LyricsKind], expected: Option<Lyrics>) {
+        assert_eq!(pick_lyrics(response, order), expected);
+    }
+
     #[test]
-    fn test_sources_are_unrestricted_when_unset_or_complete() {
+    fn the_highest_priority_format_the_sync_level_allows_wins() {
+        check_pick(
+            response(SyncLevel::Word, false, vec![synced_line()]),
+            &[LyricsKind::Elrc, LyricsKind::Lrc, LyricsKind::Plain],
+            Some(Lyrics::Elrc(build_elrc(&[synced_line()]))),
+        );
+        check_pick(
+            response(SyncLevel::Line, false, vec![synced_line()]),
+            &[LyricsKind::Elrc, LyricsKind::Lrc, LyricsKind::Plain],
+            Some(Lyrics::Lrc(build_lrc(&[synced_line()]))),
+        );
+        check_pick(
+            response(SyncLevel::None, false, vec![synced_line()]),
+            &[LyricsKind::Elrc, LyricsKind::Lrc, LyricsKind::Plain],
+            Some(Lyrics::Plain("hello world".into())),
+        );
+    }
+
+    #[test]
+    fn a_format_above_the_sync_level_is_skipped() {
+        check_pick(
+            response(SyncLevel::Line, false, vec![synced_line()]),
+            &[LyricsKind::Elrc, LyricsKind::Plain],
+            Some(Lyrics::Plain("hello world".into())),
+        );
+        check_pick(
+            response(SyncLevel::None, false, vec![synced_line()]),
+            &[LyricsKind::Elrc, LyricsKind::Lrc],
+            None,
+        );
+    }
+
+    #[test]
+    fn a_synced_format_with_no_timed_lines_is_skipped() {
+        let untimed = Line {
+            text: "plain".into(),
+            start: None,
+            end: None,
+            words: None,
+        };
+        check_pick(
+            response(SyncLevel::Word, false, vec![untimed]),
+            &[LyricsKind::Elrc, LyricsKind::Plain],
+            Some(Lyrics::Plain("plain".into())),
+        );
+    }
+
+    #[test]
+    fn an_instrumental_track_needs_no_lines() {
+        check_pick(
+            response(SyncLevel::None, true, vec![]),
+            &[LyricsKind::Elrc, LyricsKind::Lrc, LyricsKind::Plain],
+            Some(Lyrics::Instrumental),
+        );
+    }
+
+    #[test]
+    fn formats_this_provider_cannot_serve_are_never_picked() {
+        check_pick(
+            response(SyncLevel::Word, false, vec![synced_line()]),
+            &[LyricsKind::Ttml, LyricsKind::Srt],
+            None,
+        );
+    }
+
+    #[test]
+    fn sources_are_unrestricted_when_unset_or_complete() {
         assert_eq!(restrict_sources(None), None);
         assert_eq!(restrict_sources(Some("")), None);
         assert_eq!(restrict_sources(Some(" , ")), None);
@@ -241,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sources_restrict_when_a_source_is_deselected() {
+    fn sources_restrict_when_a_source_is_deselected() {
         assert_eq!(
             restrict_sources(Some("genius,kugou,musixmatch,netease")),
             Some("genius,kugou,musixmatch,netease".to_string())
@@ -252,30 +317,16 @@ mod tests {
         );
     }
 
-    fn word(text: &str, start: i64, end: i64) -> Word {
-        Word {
-            text: text.into(),
-            start,
-            end: Some(end),
-        }
-    }
-
     #[test]
-    fn test_elrc_output() {
-        let lines = vec![Line {
-            text: "hello world".into(),
-            start: Some(1000),
-            end: Some(3000),
-            words: Some(vec![word("hello", 1000, 2000), word("world", 2000, 3000)]),
-        }];
+    fn elrc_renders_word_timings() {
         assert_eq!(
-            build_elrc(&lines),
+            build_elrc(&[synced_line()]),
             "[00:01.00]<00:01.00>hello<00:02.00>world<00:03.00>"
         );
     }
 
     #[test]
-    fn test_elrc_ends_on_the_last_word_not_on_the_line() {
+    fn elrc_ends_on_the_last_word_not_on_the_line() {
         let lines = vec![Line {
             text: "Yeah".into(),
             start: Some(14075),
@@ -286,7 +337,7 @@ mod tests {
     }
 
     #[test]
-    fn test_elrc_falls_back_to_the_line_end_when_the_last_word_has_none() {
+    fn elrc_falls_back_to_the_line_end_when_the_last_word_has_none() {
         let lines = vec![Line {
             text: "hello".into(),
             start: Some(1000),
@@ -301,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn test_elrc_falls_back_to_the_next_word_before_the_line_end() {
+    fn elrc_falls_back_to_the_next_word_before_the_line_end() {
         let lines = vec![Line {
             text: "hello world".into(),
             start: Some(1000),
@@ -322,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lrc_output() {
+    fn lrc_renders_line_timestamps() {
         let lines = vec![
             Line {
                 text: "first".into(),
@@ -341,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_is_empty_when_no_line_has_timings() {
+    fn a_build_is_empty_when_no_line_has_timings() {
         let lines = vec![Line {
             text: "plain".into(),
             start: None,
