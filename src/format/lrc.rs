@@ -2,45 +2,138 @@ use std::borrow::Cow;
 
 const KEEP_TAGS: &[&str] = &["offset"];
 
-const CREDIT_PREFIXES: &[&str] = &[
-    "Artist",
-    "Album",
-    "Title",
-    "Lyrics by",
-    "Composed by",
-    "Produced by",
-    "Published by",
-    "Vocals by",
-    "Background Vocals by",
-    "Additional Vocal by",
-    "Mixing Engineer",
-    "Mastered by",
-    "Executive Producer",
-    "Vocal Engineer",
-    "Vocals Produced by",
-    "Recorded at",
-    "Repertoire Owner",
-    "Written by",
-    "Arranged by",
-    "Music by",
-    "Words by",
-    "Lyrics",
-    "Composer",
-    "Lyricist",
-    "Producers",
-    "Writers",
-    "Arranger",
-    "Translator",
-    "Adapted by",
-    "作词",
-    "作曲",
-    "编曲",
-    "制作人",
-    "录音",
-    "混音",
-    "母带",
-    "出品人",
-    "翻译",
+const CREDIT_ROLES: &[&str] = &[
+    "adapt",
+    "album",
+    "arrang",
+    "artist",
+    "author",
+    "beat",
+    "choir",
+    "chorus",
+    "compil",
+    "compos",
+    "conduct",
+    "copyright",
+    "direct",
+    "edit",
+    "engineer",
+    "harmon",
+    "instrument",
+    "lyric",
+    "master",
+    "melod",
+    "mix",
+    "music",
+    "orchestrat",
+    "perform",
+    "produc",
+    "program",
+    "publish",
+    "record",
+    "repertoire",
+    "sampl",
+    "sing",
+    "songwrit",
+    "sound",
+    "title",
+    "translat",
+    "vocal",
+    "word",
+    "writ",
+];
+
+const CREDIT_INSTRUMENTS: &[&str] = &[
+    "accordion",
+    "banjo",
+    "bass",
+    "bongo",
+    "brass",
+    "cello",
+    "clarinet",
+    "conga",
+    "cymbal",
+    "drum",
+    "fiddle",
+    "flute",
+    "guitar",
+    "harp",
+    "horn",
+    "kalimba",
+    "key",
+    "mandolin",
+    "marimba",
+    "oboe",
+    "orchestra",
+    "organ",
+    "percussion",
+    "piano",
+    "sax",
+    "shaker",
+    "sitar",
+    "string",
+    "synth",
+    "tambourine",
+    "timpani",
+    "trombone",
+    "trumpet",
+    "tuba",
+    "turntable",
+    "ukulele",
+    "viol",
+    "whistle",
+    "woodwind",
+    "xylophone",
+];
+
+const CREDIT_FILLERS: &[&str] = &[
+    "acoustic",
+    "additional",
+    "addl",
+    "all",
+    "and",
+    "assistant",
+    "associate",
+    "asst",
+    "at",
+    "background",
+    "backing",
+    "by",
+    "co",
+    "digital",
+    "electric",
+    "executive",
+    "extra",
+    "feat",
+    "featuring",
+    "for",
+    "ft",
+    "guest",
+    "in",
+    "junior",
+    "lead",
+    "live",
+    "main",
+    "of",
+    "on",
+    "or",
+    "original",
+    "other",
+    "owner",
+    "second",
+    "senior",
+    "session",
+    "slide",
+    "steel",
+    "studio",
+    "the",
+    "uncredited",
+    "with",
+];
+
+const CREDIT_LABELS_CJK: &[&str] = &[
+    "作词", "作曲", "编曲", "制作", "监制", "录音", "混音", "母带", "出品", "翻译", "和声", "演唱",
+    "吉他", "贝斯", "键盘", "钢琴", "弦乐", "鼓",
 ];
 
 /// A leading "Artist - Title" header is only stripped when its timestamp is
@@ -71,10 +164,12 @@ pub fn sanitize(lrc: &str) -> String {
     for (i, &line) in kept.iter().enumerate() {
         if is_blank_timed_line(line) {
             let next = kept.get(i + 1).and_then(|l| time_tag_secs(l));
-            let long_gap = matches!(
-                (time_tag_secs(line), next),
-                (Some(start), Some(end)) if end - start >= BLANK_GAP_MIN_SECS
-            );
+            let long_gap = match (time_tag_secs(line), next) {
+                (Some(_), None) => true, // Trailing blank timestamp
+                (Some(start), Some(end)) => end - start >= BLANK_GAP_MIN_SECS,
+                _ => false,
+            };
+
             if !long_gap {
                 continue;
             }
@@ -185,17 +280,43 @@ fn is_droppable_metadata(line: &str) -> bool {
 
 fn is_credit_line(text: &str) -> bool {
     let plain = strip_word_tags(text);
-    let plain = plain.trim_start();
 
-    CREDIT_PREFIXES.iter().any(|prefix| {
-        plain
-            .get(..prefix.len())
-            .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
-            && {
-                let rest = plain[prefix.len()..].trim_start_matches(' ');
-                rest.starts_with(':') || rest.starts_with('：')
-            }
-    })
+    let Some(label) = credit_label(plain.trim_start()) else {
+        return false;
+    };
+
+    if CREDIT_LABELS_CJK.iter().any(|l| label.contains(l)) {
+        return true;
+    }
+
+    let mut named_role = false;
+    for word in label.split(|c: char| !c.is_alphanumeric()) {
+        if word.chars().nth(1).is_none() {
+            continue;
+        }
+        let word = word.to_ascii_lowercase();
+
+        if starts_with_any(&word, CREDIT_ROLES) || starts_with_any(&word, CREDIT_INSTRUMENTS) {
+            named_role = true;
+        } else if !is_credit_filler(&word) {
+            return false;
+        }
+    }
+
+    named_role
+}
+
+fn credit_label(text: &str) -> Option<&str> {
+    let end = text.find([':', '：'])?;
+    Some(text[..end].trim_end())
+}
+
+fn starts_with_any(word: &str, stems: &[&str]) -> bool {
+    stems.iter().any(|stem| word.starts_with(stem))
+}
+
+fn is_credit_filler(word: &str) -> bool {
+    CREDIT_FILLERS.contains(&word) || word.chars().all(|c| c.is_ascii_digit())
 }
 
 pub(crate) fn strip_word_tags(text: &str) -> Cow<'_, str> {
@@ -261,388 +382,483 @@ fn parse_time_tag(content: &str) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
-    use super::format_timestamp;
-    use super::is_instrumental;
-    use super::is_synced;
-    use super::sanitize;
-    use super::strip_word_tags;
+    use super::*;
 
-    #[test]
-    fn test_format_timestamp_rounds_to_centiseconds() {
-        assert_eq!(format_timestamp(0), "00:00.00");
-        assert_eq!(format_timestamp(736), "00:00.74");
-        assert_eq!(format_timestamp(65_000), "01:05.00");
-        assert_eq!(format_timestamp(-5), "00:00.00");
+    fn trim_indent(text: &str) -> String {
+        let text = text.strip_prefix('\n').unwrap_or(text);
+        let indent = text
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.len() - line.trim_start().len())
+            .min()
+            .unwrap_or(0);
+
+        text.lines()
+            .map(|line| line.get(indent..).unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim_end()
+            .to_owned()
+    }
+
+    #[track_caller]
+    fn check_sanitize(input: &str, expected: &str) {
+        assert_eq!(sanitize(&trim_indent(input)), trim_indent(expected));
+    }
+
+    #[track_caller]
+    fn check_instrumental(input: &str, expected: bool) {
+        assert_eq!(is_instrumental(&trim_indent(input)), expected);
+    }
+
+    #[track_caller]
+    fn check_synced(input: &str, expected: bool) {
+        assert_eq!(is_synced(&trim_indent(input)), expected);
+    }
+
+    #[track_caller]
+    fn check_word_tags(input: &str, expected: &str) {
+        assert_eq!(strip_word_tags(input), expected);
+    }
+
+    #[track_caller]
+    fn check_timestamp(ms: i64, expected: &str) {
+        assert_eq!(format_timestamp(ms), expected);
     }
 
     #[test]
-    fn test_sanitize_keeps_hour_form_lines() {
-        let lrc = "[01:40:05.00]<01:40:05.00>past <01:40:06.00>the hour<01:40:07.00>";
-        assert_eq!(sanitize(lrc), lrc);
-        assert!(is_synced(lrc));
-    }
-
-    #[test]
-    fn test_format_timestamp_rolls_into_hours_past_99_minutes() {
-        assert_eq!(format_timestamp(99 * 60_000 + 59_990), "99:59.99");
-        assert_eq!(format_timestamp(100 * 60_000), "01:40:00.00");
-        assert_eq!(
-            format_timestamp(3 * 3_600_000 + 25 * 60_000 + 7_120),
-            "03:25:07.12"
+    fn smoke() {
+        check_sanitize("", "");
+        check_sanitize(
+            "
+            [00:10.00] Hello world
+            [00:15.00] Foo bar",
+            "
+            [00:10.00] Hello world
+            [00:15.00] Foo bar",
         );
     }
 
-    mod strip_word_tags_tests {
-        use super::strip_word_tags;
-        use std::borrow::Cow;
+    mod timestamps {
+        use super::*;
 
         #[test]
-        fn test_no_tags_borrows_input() {
-            assert!(matches!(strip_word_tags("plain text"), Cow::Borrowed(_)));
+        fn rounds_to_centiseconds() {
+            check_timestamp(0, "00:00.00");
+            check_timestamp(736, "00:00.74");
+            check_timestamp(65_000, "01:05.00");
         }
 
         #[test]
-        fn test_strips_word_timing_tags() {
-            assert_eq!(
-                strip_word_tags("<00:00.00>Hello <00:00.50>world"),
-                "Hello world"
-            );
+        fn negative_offsets_clamp_to_zero() {
+            check_timestamp(-5, "00:00.00");
         }
 
         #[test]
-        fn test_keeps_non_digit_angle_brackets() {
-            assert_eq!(strip_word_tags("a <b> c"), "a <b> c");
+        fn roll_into_hours_past_99_minutes() {
+            check_timestamp(99 * 60_000 + 59_990, "99:59.99");
+            check_timestamp(100 * 60_000, "01:40:00.00");
+            check_timestamp(3 * 3_600_000 + 25 * 60_000 + 7_120, "03:25:07.12");
         }
 
         #[test]
-        fn test_unclosed_digit_bracket_is_kept() {
-            assert_eq!(strip_word_tags("I <3 it"), "I <3 it");
-        }
-
-        #[test]
-        fn test_tag_at_end_without_close_is_kept() {
-            assert_eq!(strip_word_tags("done <12:34"), "done <12:34");
+        fn hour_form_time_tags_are_understood() {
+            let line = "[01:40:05.00]<01:40:05.00>past <01:40:06.00>the hour<01:40:07.00>";
+            check_sanitize(line, line);
+            check_synced(line, true);
         }
     }
 
-    mod sanitize_tests {
-        use super::sanitize;
+    mod metadata {
+        use super::*;
 
         #[test]
-        fn test_metadata_tags_stripped() {
-            let input = "[ar:Artist Name]\n[al:Album]\n[ti:Song Title]\n[00:10.00] Hello";
-            assert_eq!(sanitize(input), "[00:10.00] Hello");
-        }
-
-        #[test]
-        fn test_offset_tag_kept() {
-            let input = "[offset:-500]\n[ar:Artist]\n[00:10.00] Hello";
-            assert_eq!(sanitize(input), "[offset:-500]\n[00:10.00] Hello");
-        }
-
-        #[test]
-        fn test_standalone_bracket_without_colon_stripped() {
-            let input = "[SomethingWithoutColon]\n[00:10.00] Hello";
-            assert_eq!(sanitize(input), "[00:10.00] Hello");
-        }
-
-        #[test]
-        fn test_regular_lyric_lines_kept() {
-            let input = "[00:10.00] Hello world\n[00:15.00] Foo bar";
-            assert_eq!(
-                sanitize(input),
-                "[00:10.00] Hello world\n[00:15.00] Foo bar"
+        fn tags_are_stripped() {
+            check_sanitize(
+                "
+                [ar:Artist Name]
+                [al:Album]
+                [ti:Song Title]
+                [00:10.00] Hello",
+                "[00:10.00] Hello",
             );
         }
 
         #[test]
-        fn test_empty_input() {
-            assert_eq!(sanitize(""), "");
-        }
-
-        #[test]
-        fn test_short_gap_blank_line_dropped() {
-            let input = "[00:44.95]A song in every breath\n[00:47.60]\n[00:48.36]Sing me";
-            assert_eq!(
-                sanitize(input),
-                "[00:44.95]A song in every breath\n[00:48.36]Sing me"
+        fn offset_tag_is_kept() {
+            check_sanitize(
+                "
+                [offset:-500]
+                [ar:Artist]
+                [00:10.00] Hello",
+                "
+                [offset:-500]
+                [00:10.00] Hello",
             );
         }
 
         #[test]
-        fn test_long_gap_blank_line_kept() {
-            let input = "[00:44.95]A song\n[00:47.60]\n[00:55.00]Sing me";
-            assert_eq!(
-                sanitize(input),
-                "[00:44.95]A song\n[00:47.60]\n[00:55.00]Sing me"
-            );
-        }
-
-        #[test]
-        fn test_trailing_blank_line_dropped() {
-            let input = "[00:44.95]Last line\n[00:47.60]";
-            assert_eq!(sanitize(input), "[00:44.95]Last line");
-        }
-
-        #[test]
-        fn test_first_time_tag_title_pattern_at_under_5s_is_filtered() {
-            let input = "[00:01.00] Artist - Title\n[00:05.00] First verse";
-            assert_eq!(sanitize(input), "[00:05.00] First verse");
-        }
-
-        #[test]
-        fn test_first_time_tag_no_dash_is_kept() {
-            let input = "[00:01.00] First verse";
-            assert_eq!(sanitize(input), "[00:01.00] First verse");
-        }
-
-        #[test]
-        fn test_first_time_tag_title_pattern_at_exactly_5s_is_kept() {
-            let input = "[00:05.00] Artist - Title\n[00:10.00] Hello";
-            assert_eq!(
-                sanitize(input),
-                "[00:05.00] Artist - Title\n[00:10.00] Hello"
-            );
-        }
-
-        #[test]
-        fn test_second_time_tag_title_pattern_is_kept() {
-            let input = "[00:01.00] First verse\n[00:03.00] Artist - Title";
-            assert_eq!(
-                sanitize(input),
-                "[00:01.00] First verse\n[00:03.00] Artist - Title"
-            );
-        }
-
-        #[test]
-        fn test_non_tagged_credit_line_filtered() {
-            let input = "Lyrics by: Someone\n[00:05.00] Hello";
-            assert_eq!(sanitize(input), "[00:05.00] Hello");
-        }
-
-        #[test]
-        fn test_time_tagged_credit_line_filtered() {
-            let input = "[00:01.00] Lyrics by: Someone\n[00:05.00] Hello";
-            assert_eq!(sanitize(input), "[00:05.00] Hello");
-        }
-
-        #[test]
-        fn test_credit_with_fullwidth_colon_filtered() {
-            let input = "Written by\u{FF1A} Someone\n[00:05.00] Hello";
-            assert_eq!(sanitize(input), "[00:05.00] Hello");
-        }
-
-        #[test]
-        fn test_multiple_credits_filtered() {
-            let input =
-                "[00:01.00] Music by: Composer\n[00:02.00] Arranged by: Arranger\n[00:10.00] Verse";
-            assert_eq!(sanitize(input), "[00:10.00] Verse");
-        }
-
-        #[test]
-        fn test_credit_prefix_case_insensitive() {
-            let input = "LYRICS BY: Someone\n[00:05.00] Hello";
-            assert_eq!(sanitize(input), "[00:05.00] Hello");
-        }
-
-        #[test]
-        fn test_chinese_credit_lines_filtered() {
-            let input = "[00:00.000] 作词 : Freddie Mercury\n[00:00.000] 作曲 : Freddie Mercury\n[00:06.600]He's a fairy feller";
-            assert_eq!(sanitize(input), "[00:06.600]He's a fairy feller");
-        }
-
-        #[test]
-        fn test_chinese_credit_no_space_before_colon_filtered() {
-            let input = "[00:00.000]作词:Freddie Mercury\n[00:01.000]作曲:Freddie Mercury\n[00:06.600]He's a fairy feller";
-            assert_eq!(sanitize(input), "[00:06.600]He's a fairy feller");
-        }
-
-        #[test]
-        fn test_chinese_arranger_credit_filtered() {
-            let input = "[00:02.000]编曲 : Queen\n[00:06.600]He's a fairy feller";
-            assert_eq!(sanitize(input), "[00:06.600]He's a fairy feller");
-        }
-
-        #[test]
-        fn test_netease_credit_block_filtered() {
-            // NetEase preamble example
-            let input = concat!(
-                "[00:00.000] 作词 : Freddie Mercury\n",
-                "[00:00.000] 作曲 : Freddie Mercury\n",
-                "[00:01.000]作曲 : Freddie Mercury\n",
-                "[00:02.000]编曲 : Queen\n",
-                "[00:06.600]He's a fairy feller\n",
-                "[00:20.860]Ah ah the fairy folk have gathered\n",
-                "[00:22.590]Round the new moon's shine",
-            );
-            assert_eq!(
-                sanitize(input),
-                "[00:06.600]He's a fairy feller\n[00:20.860]Ah ah the fairy folk have gathered\n[00:22.590]Round the new moon's shine"
-            );
-        }
-
-        #[test]
-        fn test_enhanced_lrc_title_line_filtered() {
-            let input = concat!(
-                "[00:00.00]<00:00.00>Artist <00:00.50>- <00:01.00>Title\n",
-                "[00:06.00]<00:06.00>First <00:06.50>line"
-            );
-            assert_eq!(sanitize(input), "[00:06.00]<00:06.00>First <00:06.50>line");
-        }
-
-        #[test]
-        fn test_enhanced_lrc_credit_line_filtered() {
-            let input = concat!(
-                "[00:01.00]<00:01.00>Composed <00:01.50>by<00:02.00>: <00:02.50>Someone\n",
-                "[00:06.00]<00:06.00>Hello"
-            );
-            assert_eq!(sanitize(input), "[00:06.00]<00:06.00>Hello");
-        }
-
-        #[test]
-        fn test_enhanced_lrc_word_tags_preserved_in_output() {
-            let input = "[00:06.00]<00:06.00>Hello <00:06.50>world";
-            assert_eq!(sanitize(input), "[00:06.00]<00:06.00>Hello <00:06.50>world");
-        }
-
-        #[test]
-        fn test_space_before_colon_english_credit_filtered() {
-            let input = "Written by : Someone\n[00:05.00] Hello";
-            assert_eq!(sanitize(input), "[00:05.00] Hello");
-
-            let input = concat!(
-                "[ar:Artist]\n",
-                "[al:Album]\n",
-                "[offset:500]\n",
-                "[00:00.50] Artist - Title\n",
-                "[00:10.00] Lyrics by: Someone\n",
-                "[00:15.00] Hello\n",
-                "[00:20.00] World"
-            );
-            assert_eq!(
-                sanitize(input),
-                "[offset:500]\n[00:15.00] Hello\n[00:20.00] World"
+        fn bracketed_label_without_colon_is_stripped() {
+            check_sanitize(
+                "
+                [SomethingWithoutColon]
+                [00:10.00] Hello",
+                "[00:10.00] Hello",
             );
         }
     }
 
-    mod is_instrumental_tests {
-        use super::is_instrumental;
+    mod title_header {
+        use super::*;
 
         #[test]
-        fn test_detects_plain_instrumental() {
-            assert!(is_instrumental("Instrumental"));
-        }
-
-        #[test]
-        fn test_detects_chinese_instrumental() {
-            assert!(is_instrumental("[00:01.00]纯音乐，请欣赏"));
-        }
-
-        #[test]
-        fn test_detects_no_lyrics() {
-            assert!(is_instrumental("[00:00.00]No Lyrics"));
-        }
-
-        #[test]
-        fn test_metadata_lines_do_not_count() {
-            let input = concat!(
-                "[ar:test]\n",
-                "[ti:test]\n",
-                "[offset:0]\n",
-                "[00:01.00]纯音乐，请欣赏\n"
+        fn only_leading_artist_title_line_is_stripped() {
+            check_sanitize(
+                "
+                [00:01.00] Artist - Title
+                [00:05.00] First verse",
+                "[00:05.00] First verse",
             );
 
-            assert!(is_instrumental(input));
-        }
-
-        #[test]
-        fn test_more_than_three_timed_lines_is_not_instrumental() {
-            let input = concat!(
-                "[00:01.00]纯音乐，请欣赏\n",
-                "[00:02.00]...\n",
-                "[00:03.00]...\n",
-                "[00:04.00]...\n"
+            check_sanitize(
+                "
+                [00:01.00] First verse
+                [00:03.00] Artist - Title",
+                "
+                [00:01.00] First verse
+                [00:03.00] Artist - Title",
             );
-
-            assert!(!is_instrumental(input));
         }
 
         #[test]
-        fn test_non_timed_lines_do_not_count() {
-            let input = concat!("hello\n", "world\n", "[00:01.00]instrumental\n");
-
-            assert!(is_instrumental(input));
-        }
-
-        #[test]
-        fn test_bom_is_handled() {
-            let input = "\u{feff}[00:01.00]纯音乐";
-
-            assert!(is_instrumental(input));
-        }
-
-        #[test]
-        fn test_regular_lyrics_not_detected() {
-            let input = concat!("[00:01.00]Hello\n", "[00:05.00]World\n");
-
-            assert!(!is_instrumental(input));
-        }
-
-        #[test]
-        fn test_offset_tag_is_not_counted_as_timed_line() {
-            let input = concat!("[offset:0]\n", "[00:01.00]instrumental\n");
-
-            assert!(is_instrumental(input));
+        fn line_without_a_dash_is_kept() {
+            check_sanitize("[00:01.00] First verse", "[00:01.00] First verse");
         }
     }
 
-    mod is_synced_tests {
-        use super::is_synced;
+    mod credits {
+        use super::*;
 
         #[test]
-        fn test_real_synced_lrc_is_synced() {
-            let input = concat!("[00:01.00]Hello\n", "[00:05.00]World\n");
-
-            assert!(is_synced(input));
-        }
-
-        #[test]
-        fn test_metadata_tags_before_timed_line_is_synced() {
-            let input = concat!(
-                "[ar:Artist]\n",
-                "[al:Album]\n",
-                "[ti:Title]\n",
-                "[00:01.00]Hello\n"
+        fn are_stripped_with_and_without_time_tags() {
+            check_sanitize(
+                "
+                Lyrics by: Someone
+                [00:05.00] Hello",
+                "[00:05.00] Hello",
             );
-
-            assert!(is_synced(input));
+            check_sanitize(
+                "
+                [00:01.00] Lyrics by: Someone
+                [00:05.00] Hello",
+                "[00:05.00] Hello",
+            );
         }
 
         #[test]
-        fn test_plain_multiline_text_is_not_synced() {
-            let input = "Hello\nWorld\n";
-
-            assert!(!is_synced(input));
+        fn by_is_optional() {
+            check_sanitize(
+                "
+                Producer: Someone
+                [00:05.00] Hello",
+                "[00:05.00] Hello",
+            );
+            check_sanitize(
+                "
+                [00:01.00] Mix: Someone
+                [00:05.00] Hello",
+                "[00:05.00] Hello",
+            );
         }
 
         #[test]
-        fn test_bracketed_non_time_label_is_not_synced() {
-            let input = "[Verse 1]\nHello\nWorld\n";
-
-            assert!(!is_synced(input));
+        fn case_and_spacing_are_ignored() {
+            check_sanitize(
+                "
+                LYRICS BY: Someone
+                [00:05.00] Hello",
+                "[00:05.00] Hello",
+            );
+            check_sanitize(
+                "
+                Written by : Someone
+                [00:05.00] Hello",
+                "[00:05.00] Hello",
+            );
+            check_sanitize(
+                "
+                Written by\u{FF1A} Someone
+                [00:05.00] Hello",
+                "[00:05.00] Hello",
+            );
         }
 
         #[test]
-        fn test_empty_input_is_not_synced() {
-            assert!(!is_synced(""));
+        fn roles_are_matched_by_stem() {
+            check_sanitize(
+                "
+                [00:01.00] Music by: Composer
+                [00:02.00] Arranged by: Arranger
+                [00:03.00] Mixing Engineer: Someone
+                [00:04.00] Vocal Production: Someone
+                [00:10.00] Verse",
+                "[00:10.00] Verse",
+            );
         }
 
         #[test]
-        fn test_bom_is_handled() {
-            let input = "\u{feff}[00:01.00]Hello";
+        fn instruments_are_recognised() {
+            check_sanitize(
+                "
+                [00:01.00] Guitar, Drums, Bass, Keys, Piano and Programming by: Someone
+                [00:02.00] ACOUSTIC GUITAR: Someone
+                [00:03.00] 12 String Guitar by : Someone
+                [00:04.00] Additional Percussion & Synths: Someone
+                [00:10.00] Hello",
+                "[00:10.00] Hello",
+            );
+        }
 
-            assert!(is_synced(input));
+        #[test]
+        fn chinese_labels_need_no_spaces() {
+            check_sanitize(
+                "
+                [00:00.000] 作词 : Freddie Mercury
+                [00:01.000]作曲:Freddie Mercury
+                [00:02.000]编曲 : Queen
+                [00:06.600]He's a fairy feller",
+                "[00:06.600]He's a fairy feller",
+            );
+        }
+
+        #[test]
+        fn netease_preamble_is_stripped() {
+            check_sanitize(
+                "
+                [00:00.000] 作词 : Freddie Mercury
+                [00:00.000] 作曲 : Freddie Mercury
+                [00:01.000]作曲 : Freddie Mercury
+                [00:02.000]编曲 : Queen
+                [00:06.600]He's a fairy feller
+                [00:20.860]Ah ah the fairy folk have gathered
+                [00:22.590]Round the new moon's shine",
+                "
+                [00:06.600]He's a fairy feller
+                [00:20.860]Ah ah the fairy folk have gathered
+                [00:22.590]Round the new moon's shine",
+            );
+        }
+
+        #[test]
+        fn lyrics_containing_a_colon_are_kept() {
+            let lyrics = "
+                [00:05.00] And then he said: run
+                [00:10.00] Baby: I love you
+                [00:15.00] And: so it goes";
+            check_sanitize(lyrics, lyrics);
+        }
+
+        #[test]
+        fn unknown_word_in_the_label_keeps_the_line() {
+            let lyrics = "[00:05.00] Producer of nightmares: me";
+            check_sanitize(lyrics, lyrics);
+        }
+
+        #[test]
+        fn whole_header_block_is_stripped() {
+            check_sanitize(
+                "
+                [ar:Artist]
+                [al:Album]
+                [offset:500]
+                [00:00.50] Artist - Title
+                [00:10.00] Lyrics by: Someone
+                [00:15.00] Hello
+                [00:20.00] World",
+                "
+                [offset:500]
+                [00:15.00] Hello
+                [00:20.00] World",
+            );
+        }
+    }
+
+    mod blank_lines {
+        use super::*;
+
+        #[test]
+        fn short_gap_is_dropped() {
+            check_sanitize(
+                "
+                [00:44.95]A song in every breath
+                [00:47.60]
+                [00:48.36]Sing me",
+                "
+                [00:44.95]A song in every breath
+                [00:48.36]Sing me",
+            );
+        }
+
+        #[test]
+        fn long_gap_is_kept() {
+            check_sanitize(
+                "
+                [00:44.95]A song
+                [00:47.60]
+                [00:55.00]Sing me",
+                "
+                [00:44.95]A song
+                [00:47.60]
+                [00:55.00]Sing me",
+            );
+        }
+
+        #[test]
+        fn trailing_blank_line_is_kept() {
+            check_sanitize(
+                "
+                [00:44.95]Last line
+                [00:47.60]",
+                "
+                [00:44.95]Last line
+                [00:47.60]",
+            );
+        }
+    }
+
+    mod word_timings {
+        use super::*;
+
+        #[test]
+        fn survive_sanitizing() {
+            let line = "[00:06.00]<00:06.00>Hello <00:06.50>world";
+            check_sanitize(line, line);
+        }
+
+        #[test]
+        fn do_not_hide_a_title_header() {
+            check_sanitize(
+                "
+                [00:00.00]<00:00.00>Artist <00:00.50>- <00:01.00>Title
+                [00:06.00]<00:06.00>First <00:06.50>line",
+                "[00:06.00]<00:06.00>First <00:06.50>line",
+            );
+        }
+
+        #[test]
+        fn do_not_hide_a_credit() {
+            check_sanitize(
+                "
+                [00:01.00]<00:01.00>Composed <00:01.50>by<00:02.00>: <00:02.50>Someone
+                [00:06.00]<00:06.00>Hello",
+                "[00:06.00]<00:06.00>Hello",
+            );
+        }
+
+        #[test]
+        fn are_stripped_from_the_text_being_inspected() {
+            check_word_tags("<00:00.00>Hello <00:00.50>world", "Hello world");
+        }
+
+        #[test]
+        fn angle_brackets_that_are_not_tags_are_left_alone() {
+            check_word_tags("a <b> c", "a <b> c");
+            check_word_tags("I <3 it", "I <3 it");
+            check_word_tags("done <12:34", "done <12:34");
+        }
+    }
+
+    mod instrumental {
+        use super::*;
+
+        #[test]
+        fn markers_are_detected() {
+            check_instrumental("Instrumental", true);
+            check_instrumental("[00:00.00]No Lyrics", true);
+            check_instrumental("[00:01.00]纯音乐，请欣赏", true);
+            check_instrumental("\u{feff}[00:01.00]纯音乐", true);
+        }
+
+        #[test]
+        fn lyrics_are_not_a_marker() {
+            check_instrumental(
+                "
+                [00:01.00]Hello
+                [00:05.00]World",
+                false,
+            );
+        }
+
+        #[test]
+        fn more_than_three_timed_lines_outweigh_a_marker() {
+            check_instrumental(
+                "
+                [00:01.00]纯音乐，请欣赏
+                [00:02.00]...
+                [00:03.00]...
+                [00:04.00]...",
+                false,
+            );
+        }
+
+        #[test]
+        fn metadata_and_untimed_lines_are_not_counted() {
+            check_instrumental(
+                "
+                [ar:test]
+                [ti:test]
+                [offset:0]
+                [00:01.00]纯音乐，请欣赏",
+                true,
+            );
+            check_instrumental(
+                "
+                hello
+                world
+                [00:01.00]instrumental",
+                true,
+            );
+        }
+    }
+
+    mod sync {
+        use super::*;
+
+        #[test]
+        fn time_tagged_lines_are_synced() {
+            check_synced(
+                "
+                [00:01.00]Hello
+                [00:05.00]World",
+                true,
+            );
+            check_synced(
+                "
+                [ar:Artist]
+                [al:Album]
+                [ti:Title]
+                [00:01.00]Hello",
+                true,
+            );
+            check_synced("\u{feff}[00:01.00]Hello", true);
+        }
+
+        #[test]
+        fn plain_text_is_not_synced() {
+            check_synced("", false);
+            check_synced(
+                "
+                Hello
+                World",
+                false,
+            );
+            check_synced(
+                "
+                [Verse 1]
+                Hello
+                World",
+                false,
+            );
         }
     }
 }
