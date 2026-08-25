@@ -208,7 +208,7 @@
 
         "preferUncensored": {
           "type": "boolean",
-          "title": "Prefer uncensored lyrics [EXPERIMENTAL]",
+          "title": "Prefer uncensored lyrics",
           "default": false
         },
 
