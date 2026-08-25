@@ -144,7 +144,7 @@ impl Orchestrator<'_> {
 
         Some(PreparedProvider {
             label: provider_label(&entry.name, &provider.log_params()),
-            provider_id: entry.cache_id(),
+            provider_id: entry.id(),
             provider,
         })
     }

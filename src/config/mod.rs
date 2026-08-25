@@ -1,4 +1,7 @@
-use crate::types::LyricsKind;
+use crate::{
+    config::ttl::{DEFAULT_CACHE_TTL, DEFAULT_NEGATIVE_CACHE_TTL},
+    types::LyricsKind,
+};
 use extism_pdk::warn;
 use host::{get_bool, get_f64, get_optional_i32, get_raw_string, get_string};
 use nd_pdk::lyrics::Error;
@@ -57,10 +60,10 @@ impl Default for PluginConfig {
             instrumental_extension: DEFAULT_INSTRUMENTAL_EXTENSION.to_string(),
             enable_cache: true,
             per_type_cache_ttl: false,
-            cache_ttl_hours: ttl::DEFAULT_CACHE_TTL,
+            cache_ttl_hours: DEFAULT_CACHE_TTL,
             type_cache_ttl_hours: TypeCacheTtls::default(),
             negative_cache: true,
-            negative_cache_ttl_hours: ttl::DEFAULT_NEGATIVE_CACHE_TTL,
+            negative_cache_ttl_hours: DEFAULT_NEGATIVE_CACHE_TTL,
             providers: vec![],
             provider_mode: ProviderMode::default(),
             prefer_uncensored: false,

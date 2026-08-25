@@ -50,7 +50,7 @@ pub struct ProviderEntry {
 }
 
 impl ProviderEntry {
-    pub fn cache_id(&self) -> String {
+    pub fn id(&self) -> String {
         let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
         let mut mix = |bytes: &[u8]| {
             for byte in bytes {
@@ -182,7 +182,7 @@ mod tests {
             entry("lrclib", &[("baseUrl", "http://b")]),
             entry("lrclib", &[("baseUrl", "http://a"), ("timeout", "30")]),
         ];
-        let ids: Vec<String> = entries.iter().map(ProviderEntry::cache_id).collect();
+        let ids: Vec<String> = entries.iter().map(ProviderEntry::id).collect();
         let unique: HashSet<&String> = ids.iter().collect();
 
         assert_eq!(unique.len(), ids.len(), "cache ids collided: {ids:?}");

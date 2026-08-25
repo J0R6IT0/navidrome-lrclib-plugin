@@ -214,301 +214,258 @@ fn sanitize_path_segment(name: &str) -> String {
 mod tests {
     use super::*;
 
-    fn default_track() -> TrackInfo {
-        TrackInfo {
-            id: "123".to_string(),
-            title: "Test Song".to_string(),
-            album: "Test Album".to_string(),
-            artist: "Test Artist".to_string(),
-            album_artist: "Test Album Artist".to_string(),
-            track_number: 1,
-            disc_number: 1,
-            ..Default::default()
+    struct Fixture {
+        track: TrackInfo,
+        kind: LyricsKind,
+        ext: &'static str,
+    }
+
+    fn track() -> Fixture {
+        Fixture {
+            track: TrackInfo {
+                id: "123".to_string(),
+                title: "Test Song".to_string(),
+                album: "Test Album".to_string(),
+                artist: "Test Artist".to_string(),
+                album_artist: "Test Album Artist".to_string(),
+                track_number: 1,
+                disc_number: 1,
+                ..Default::default()
+            },
+            kind: LyricsKind::Lrc,
+            ext: "lrc",
         }
     }
 
-    #[test]
-    fn test_replace_padded_variable_no_padding() {
-        assert_eq!(
-            replace_padded_variable("{track:track_number}", "track:track_number", "5"),
-            "5"
-        );
+    impl Fixture {
+        fn title(mut self, title: &str) -> Fixture {
+            self.track.title = title.to_string();
+            self
+        }
+
+        fn artist(mut self, artist: &str) -> Fixture {
+            self.track.artist = artist.to_string();
+            self
+        }
+
+        fn album(mut self, album: &str) -> Fixture {
+            self.track.album = album.to_string();
+            self
+        }
+
+        fn track_number(mut self, number: i32) -> Fixture {
+            self.track.track_number = number;
+            self
+        }
+
+        fn disc_number(mut self, number: i32) -> Fixture {
+            self.track.disc_number = number;
+            self
+        }
+
+        fn plain_text(mut self) -> Fixture {
+            self.kind = LyricsKind::Plain;
+            self.ext = "txt";
+            self
+        }
+
+        #[track_caller]
+        fn check(&self, template: &str, expected: &str) {
+            let path = process_template(template, &self.track, self.kind, self.ext);
+            assert_eq!(path, PathBuf::from(expected), "{template}");
+        }
     }
 
-    #[test]
-    fn test_replace_padded_variable_with_padding() {
-        assert_eq!(
-            replace_padded_variable("{track:track_number:2}", "track:track_number", "5"),
-            "05"
-        );
-        assert_eq!(
-            replace_padded_variable("{track:track_number:3}", "track:track_number", "12"),
-            "012"
-        );
+    mod templates {
+        use super::*;
+
+        #[test]
+        fn variables_are_filled_in_and_the_extension_appended() {
+            track().check(
+                "lyrics/{type}/{track:artist}/{track:title}",
+                "lyrics/lrc/Test Artist/Test Song.lrc",
+            );
+        }
+
+        #[test]
+        fn extensions_are_not_repeated() {
+            track().check("lyrics/{track:title}.lrc", "lyrics/Test Song.lrc");
+            track().check("lyrics/{track:title}.backup", "lyrics/Test Song.backup.lrc");
+            track().check(
+                "lyrics/{track:title}.backup.txt",
+                "lyrics/Test Song.backup.txt.lrc",
+            );
+            track().check("lyrics/{track:title}.txt", "lyrics/Test Song.txt.lrc");
+        }
+
+        #[test]
+        fn both_slashes_separate_directories() {
+            track().check(
+                r"lyrics\{type}/{track:artist}\{track:title}",
+                "lyrics/lrc/Test Artist/Test Song.lrc",
+            );
+            track().check(
+                "lyrics///{type}//{track:artist}/{track:title}",
+                "lyrics/lrc/Test Artist/Test Song.lrc",
+            );
+        }
+
+        #[test]
+        fn a_name_that_cannot_be_built_falls_back_to_unknown() {
+            track().check("///", "unknown.lrc");
+            track().check(
+                "lyrics///{type}//{track:artist}/",
+                "lyrics/lrc/Test Artist/unknown.lrc",
+            );
+            track()
+                .plain_text()
+                .title("")
+                .artist("")
+                .check("{track:artist}/{track:title}", "unknown/unknown.txt");
+            track()
+                .plain_text()
+                .title("???")
+                .artist("***")
+                .check("{track:artist}/{track:title}", "unknown/unknown.txt");
+        }
+
+        #[test]
+        fn dots_inside_a_name_are_kept() {
+            track().artist("U2").album("Achtung.Baby").check(
+                "{track:artist}/{track:album}/{track:title}",
+                "U2/Achtung.Baby/Test Song.lrc",
+            );
+        }
+
+        #[test]
+        fn dots_around_a_name_are_not_kept() {
+            track()
+                .plain_text()
+                .artist(".The Artist.")
+                .title("  ..Hidden Song..  ")
+                .check("{track:artist}/{track:title}", "The Artist/Hidden Song.txt");
+        }
+
+        #[test]
+        fn it_is_not_possible_to_exit_a_directory() {
+            track()
+                .plain_text()
+                .title("../../../etc/passwd")
+                .check("lyrics/{track:title}", "lyrics/_.._.._etc_passwd.txt");
+
+            track()
+                .plain_text()
+                .check("../../{track:title}", "unknown/unknown/Test Song.txt");
+        }
+
+        #[test]
+        fn unicode_and_emoji_are_left_intact() {
+            track().artist("Björk").title("大丈夫 🎵").check(
+                "lyrics/{track:artist}/{track:title}",
+                "lyrics/Björk/大丈夫 🎵.lrc",
+            );
+        }
+
+        #[test]
+        fn a_variable_that_is_not_recognized_stays_as_is() {
+            track()
+                .plain_text()
+                .check("lyrics/{track:titel}", "lyrics/{track_titel}.txt");
+            track()
+                .plain_text()
+                .check("lyrics/{ track:title }", "lyrics/{ track_title }.txt");
+        }
+
+        #[test]
+        fn numbers_can_be_padded_by_the_template() {
+            let track = track().plain_text().disc_number(1).track_number(5);
+
+            track.check(
+                "lyrics/Disc {track:disc_number}/{track:track_number} - {track:title}",
+                "lyrics/Disc 1/5 - Test Song.txt",
+            );
+            track.check(
+                "lyrics/Disc {track:disc_number:2}/{track:track_number:2} - {track:title}",
+                "lyrics/Disc 01/05 - Test Song.txt",
+            );
+        }
     }
 
-    #[test]
-    fn test_replace_padded_variable_invalid_padding_fallback() {
-        assert_eq!(
-            replace_padded_variable("{track:track_number:abc}", "track:track_number", "5"),
-            "5"
-        );
+    mod padded_variables {
+        use super::*;
+
+        #[track_caller]
+        fn check(template: &str, value: &str, expected: &str) {
+            let replaced = replace_padded_variable(template, "track:track_number", value);
+            assert_eq!(replaced, expected, "{template}");
+        }
+
+        #[test]
+        fn a_bare_variable_takes_the_value_as_is() {
+            check("{track:track_number}", "5", "5");
+        }
+
+        #[test]
+        fn a_width_pads_the_value_with_zeros() {
+            check("{track:track_number:2}", "5", "05");
+            check("{track:track_number:3}", "12", "012");
+        }
+
+        #[test]
+        fn a_width_that_is_not_a_number_is_ignored() {
+            check("{track:track_number:abc}", "5", "5");
+        }
     }
 
-    #[test]
-    fn test_replace_padded_variable_multiple_occurrences() {
-        let template = "{track:track_number:2}_disc{track:disc_number:2}";
-        assert_eq!(
-            replace_padded_variable(template, "track:track_number", "7"),
-            "07_disc{track:disc_number:2}"
-        );
-    }
+    mod path_segments {
+        use super::*;
 
-    #[test]
-    fn test_sanitize_path_segment_standard() {
-        assert_eq!(sanitize_path_segment("Hello World"), "Hello World");
-    }
+        #[track_caller]
+        fn check(name: &str, expected: &str) {
+            assert_eq!(sanitize_path_segment(name), expected, "{name}");
+        }
 
-    #[test]
-    fn test_sanitize_path_segment_reserved_chars() {
-        assert_eq!(sanitize_path_segment("AC/DC"), "AC_DC");
-        assert_eq!(sanitize_path_segment("A:B|C?D*E"), "A_B_C_D_E");
-        assert_eq!(sanitize_path_segment("<Track>"), "_Track_");
-    }
+        #[test]
+        fn regular_names_are_kept() {
+            check("Hello World", "Hello World");
+        }
 
-    #[test]
-    fn test_sanitize_path_segment_collapse_underscores() {
-        assert_eq!(sanitize_path_segment("Song ??? Title"), "Song _ Title");
-        assert_eq!(sanitize_path_segment("Song//Title"), "Song_Title");
-    }
+        #[test]
+        fn invalid_path_characters_become_underscores() {
+            check("AC/DC", "AC_DC");
+            check("A:B|C?D*E", "A_B_C_D_E");
+            check("<Track>", "_Track_");
+        }
 
-    #[test]
-    fn test_sanitize_path_segment_trimming() {
-        assert_eq!(sanitize_path_segment("  *test*  "), "_test_");
-        assert_eq!(sanitize_path_segment("...file..."), "file");
-        assert_eq!(sanitize_path_segment("_song_"), "_song_");
-        assert_eq!(sanitize_path_segment(" . _ mixed _ . "), "_ mixed _");
-    }
+        #[test]
+        fn a_run_of_invalid_characters_becomes_a_single_underscore() {
+            check("Song ??? Title", "Song _ Title");
+            check("Song//Title", "Song_Title");
+        }
 
-    #[test]
-    fn test_sanitize_path_segment_empty_and_fallback() {
-        assert_eq!(sanitize_path_segment(""), "unknown");
-        assert_eq!(sanitize_path_segment("???"), "unknown");
-        assert_eq!(sanitize_path_segment("..."), "unknown");
-        assert_eq!(sanitize_path_segment("   "), "unknown");
-        assert_eq!(sanitize_path_segment("___"), "unknown");
-        assert_eq!(sanitize_path_segment(". _ ."), "unknown");
-    }
+        #[test]
+        fn surrounding_spaces_and_dots_are_trimmed() {
+            check("  *test*  ", "_test_");
+            check("...file...", "file");
+            check(" . _ mixed _ . ", "_ mixed _");
+        }
 
-    #[test]
-    fn test_sanitize_path_segment_preserves_leading_trailing_underscores() {
-        assert_eq!(sanitize_path_segment("_intro_"), "_intro_");
-        assert_eq!(sanitize_path_segment("__init__"), "__init__");
-        assert_eq!(
-            sanitize_path_segment(" _spaces_and_underscores_ "),
-            "_spaces_and_underscores_"
-        );
-    }
+        #[test]
+        fn underscores_the_name_came_with_are_kept() {
+            check("_song_", "_song_");
+            check("_intro_", "_intro_");
+            check("__init__", "__init__");
+            check(" _spaces_and_underscores_ ", "_spaces_and_underscores_");
+        }
 
-    #[test]
-    fn test_process_template_auto_appends_extension() {
-        let track = default_track();
-
-        let template = "lyrics/{type}/{track:artist}/{track:title}";
-        let path = process_template(template, &track, LyricsKind::Lrc, "lrc");
-        assert_eq!(path, PathBuf::from("lyrics/lrc/Test Artist/Test Song.lrc"));
-    }
-
-    #[test]
-    fn test_process_template_preserves_secondary_extensions() {
-        let track = default_track();
-
-        let template_backup = "lyrics/{track:title}.backup";
-        let path = process_template(template_backup, &track, LyricsKind::Lrc, "lrc");
-        assert_eq!(path, PathBuf::from("lyrics/Test Song.backup.lrc"));
-
-        let template_multi = "lyrics/{track:title}.backup.txt";
-        let path = process_template(template_multi, &track, LyricsKind::Lrc, "lrc");
-        assert_eq!(path, PathBuf::from("lyrics/Test Song.backup.txt.lrc"));
-    }
-
-    #[test]
-    fn test_process_template_appends_to_hardcoded_txt() {
-        let track = default_track();
-
-        let template = "lyrics/{track:title}.txt";
-        let path = process_template(template, &track, LyricsKind::Lrc, "lrc");
-        assert_eq!(path, PathBuf::from("lyrics/Test Song.txt.lrc"));
-    }
-
-    #[test]
-    fn test_process_template_handles_exact_hardcoded_ext() {
-        let track = default_track();
-
-        let template = "lyrics/{track:title}.lrc";
-        let path = process_template(template, &track, LyricsKind::Lrc, "lrc");
-        assert_eq!(path, PathBuf::from("lyrics/Test Song.lrc"));
-    }
-
-    #[test]
-    fn test_process_template_handles_multiple_slashes() {
-        let track = default_track();
-
-        let template = "lyrics///{type}//{track:artist}/";
-        let path = process_template(template, &track, LyricsKind::Lrc, "lrc");
-        assert_eq!(path, PathBuf::from("lyrics/lrc/Test Artist/unknown.lrc"));
-    }
-
-    #[test]
-    fn test_process_template_handles_only_slashes() {
-        let track = default_track();
-
-        let template = "///";
-        let path = process_template(template, &track, LyricsKind::Lrc, "lrc");
-        assert_eq!(path, PathBuf::from("unknown.lrc"));
-    }
-
-    #[test]
-    fn test_process_template_handles_empty_variables() {
-        let track = TrackInfo {
-            title: String::new(),
-            artist: String::new(),
-            ..default_track()
-        };
-
-        let template = "{track:artist}/{track:title}";
-        let path = process_template(template, &track, LyricsKind::Plain, "txt");
-        assert_eq!(path, PathBuf::from("unknown/unknown.txt"));
-    }
-
-    #[test]
-    fn test_process_template_handles_variables_with_only_invalid_chars() {
-        let track = TrackInfo {
-            title: "???".to_string(),
-            artist: "***".to_string(),
-            ..default_track()
-        };
-
-        let template = "{track:artist}/{track:title}";
-        let path = process_template(template, &track, LyricsKind::Plain, "txt");
-        assert_eq!(path, PathBuf::from("unknown/unknown.txt"));
-    }
-
-    #[test]
-    fn test_process_template_handles_dots_in_directory_names() {
-        let track = TrackInfo {
-            artist: "U2".to_string(),
-            album: "Achtung.Baby".to_string(),
-            ..default_track()
-        };
-
-        let template = "{track:artist}/{track:album}/{track:title}";
-        let path = process_template(template, &track, LyricsKind::Lrc, "lrc");
-        assert_eq!(path, PathBuf::from("U2/Achtung.Baby/Test Song.lrc"));
-    }
-
-    #[test]
-    fn test_process_template_handles_leading_trailing_dots_in_metadata() {
-        let track = TrackInfo {
-            title: "  ..Hidden Song..  ".to_string(),
-            artist: ".The Artist.".to_string(),
-            ..default_track()
-        };
-
-        let template = "{track:artist}/{track:title}";
-        let path = process_template(template, &track, LyricsKind::Plain, "txt");
-        assert_eq!(path, PathBuf::from("The Artist/Hidden Song.txt"));
-    }
-
-    #[test]
-    fn test_process_template_prevents_directory_traversal_via_metadata() {
-        let track = TrackInfo {
-            title: "../../../etc/passwd".to_string(),
-            ..default_track()
-        };
-
-        let template = "lyrics/{track:title}";
-        let path = process_template(template, &track, LyricsKind::Plain, "txt");
-
-        assert_eq!(path, PathBuf::from("lyrics/_.._.._etc_passwd.txt"));
-    }
-
-    #[test]
-    fn test_process_template_prevents_directory_traversal_via_template() {
-        let track = default_track();
-
-        let template = "../../{track:title}";
-        let path = process_template(template, &track, LyricsKind::Plain, "txt");
-
-        assert_eq!(path, PathBuf::from("unknown/unknown/Test Song.txt"));
-    }
-
-    #[test]
-    fn test_process_template_handles_unicode_and_emojis() {
-        let track = TrackInfo {
-            title: "大丈夫 🎵".to_string(),
-            artist: "Björk".to_string(),
-            ..default_track()
-        };
-
-        let template = "lyrics/{track:artist}/{track:title}";
-        let path = process_template(template, &track, LyricsKind::Lrc, "lrc");
-
-        assert_eq!(path, PathBuf::from("lyrics/Björk/大丈夫 🎵.lrc"));
-    }
-
-    #[test]
-    fn test_process_template_handles_typo_in_variable_name() {
-        let track = default_track();
-
-        let template = "lyrics/{track:titel}";
-        let path = process_template(template, &track, LyricsKind::Plain, "txt");
-
-        assert_eq!(path, PathBuf::from("lyrics/{track_titel}.txt"));
-    }
-
-    #[test]
-    fn test_process_template_handles_spaces_around_variables() {
-        let track = default_track();
-
-        let template = "lyrics/{ track:title }";
-        let path = process_template(template, &track, LyricsKind::Plain, "txt");
-
-        assert_eq!(path, PathBuf::from("lyrics/{ track_title }.txt"));
-    }
-
-    #[test]
-    fn test_process_template_handles_mixed_slashes() {
-        let track = default_track();
-
-        let template = r"lyrics\{type}/{track:artist}\{track:title}";
-        let path = process_template(template, &track, LyricsKind::Lrc, "lrc");
-
-        assert_eq!(path, PathBuf::from("lyrics/lrc/Test Artist/Test Song.lrc"));
-    }
-
-    #[test]
-    fn test_process_template_with_padded_numbers() {
-        let track = TrackInfo {
-            track_number: 5,
-            disc_number: 1,
-            ..default_track()
-        };
-
-        let template_unpadded =
-            "lyrics/Disc {track:disc_number}/{track:track_number} - {track:title}";
-        let path_unpadded = process_template(template_unpadded, &track, LyricsKind::Plain, "txt");
-        assert_eq!(
-            path_unpadded,
-            PathBuf::from("lyrics/Disc 1/5 - Test Song.txt")
-        );
-
-        let template_padded =
-            "lyrics/Disc {track:disc_number:2}/{track:track_number:2} - {track:title}";
-        let path_padded = process_template(template_padded, &track, LyricsKind::Plain, "txt");
-        assert_eq!(
-            path_padded,
-            PathBuf::from("lyrics/Disc 01/05 - Test Song.txt")
-        );
+        #[test]
+        fn a_name_with_nothing_left_becomes_unknown() {
+            check("", "unknown");
+            check("???", "unknown");
+            check("...", "unknown");
+            check("   ", "unknown");
+            check("___", "unknown");
+            check(". _ .", "unknown");
+        }
     }
 }

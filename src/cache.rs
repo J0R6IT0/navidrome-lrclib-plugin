@@ -148,82 +148,72 @@ fn decompress(data: &[u8]) -> Result<String, LyricsError> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_cache_key_lrc() {
-        assert_eq!(cache_key("abc123", LyricsKind::Lrc), "lrc:abc123");
+    #[track_caller]
+    fn check_key(kind: LyricsKind, expected: &str) {
+        assert_eq!(cache_key("abc123", kind), expected);
+    }
+
+    #[track_caller]
+    fn check_roundtrip(text: &str) {
+        let compressed = compress(text.as_bytes()).expect("compression should not fail");
+        let decompressed = decompress(&compressed).expect("decompression should not fail");
+
+        assert_eq!(decompressed, text);
+    }
+
+    #[track_caller]
+    fn check_unreadable(bytes: &[u8]) {
+        assert!(decompress(bytes).is_err(), "{bytes:?}");
     }
 
     #[test]
-    fn test_cache_key_elrc() {
-        assert_eq!(cache_key("abc123", LyricsKind::Elrc), "elrc:abc123");
+    fn an_entry_is_keyed_by_type_and_track() {
+        check_key(LyricsKind::Plain, "plain:abc123");
+        check_key(LyricsKind::Lrc, "lrc:abc123");
+        check_key(LyricsKind::Elrc, "elrc:abc123");
+        check_key(LyricsKind::Ttml, "ttml:abc123");
+        check_key(LyricsKind::Srt, "srt:abc123");
+        check_key(LyricsKind::Lyricsfile, "lyricsfile:abc123");
+        check_key(LyricsKind::Instrumental, "instrumental:abc123");
     }
 
     #[test]
-    fn test_cache_key_plain() {
-        assert_eq!(cache_key("abc123", LyricsKind::Plain), "plain:abc123");
-    }
-
-    #[test]
-    fn test_cache_key_instrumental() {
+    fn a_miss_is_keyed_by_provider_and_track() {
         assert_eq!(
-            cache_key("abc123", LyricsKind::Instrumental),
-            "instrumental:abc123"
+            negative_cache_key("abc123", "provider"),
+            "miss:provider:abc123"
         );
     }
 
     #[test]
-    fn test_negative_cache_key() {
-        assert_eq!(
-            negative_cache_key("abc123", "deadbeef"),
-            "miss:deadbeef:abc123"
-        );
+    fn cache_roundtrip_does_not_alter_lyrics() {
+        check_roundtrip("[00:12.34] Hello, world!\n[00:15.67] Testing...");
+        check_roundtrip("大丈夫 🎵");
+        check_roundtrip("");
     }
 
     #[test]
-    fn test_compress_decompress_roundtrip() {
-        let original = "[00:12.34] Hello, world!\n[00:15.67] Testing...";
-        let compressed = compress(original.as_bytes()).expect("compression failed");
-        let decompressed = decompress(&compressed).expect("decompression failed");
-
-        assert_eq!(decompressed, original);
-    }
-
-    #[test]
-    fn test_compress_decompress_empty() {
-        let compressed = compress(&[]).expect("compression of empty failed");
-        let decompressed = decompress(&compressed).expect("decompression of empty failed");
-
-        assert_eq!(decompressed, "");
-    }
-
-    #[test]
-    fn test_compress_decompress_large_payload() {
+    fn lyrics_are_compressed() {
         let original = "Lorem ipsum ".repeat(8_000);
-        let compressed = compress(original.as_bytes()).expect("compression failed");
+        let compressed = compress(original.as_bytes()).expect("compression should not fail");
 
         assert!(
             compressed.len() < original.len(),
-            "compressed payload should be smaller"
+            "compressed {} bytes into {}",
+            original.len(),
+            compressed.len()
         );
-
-        let decompressed = decompress(&compressed).expect("decompression failed");
-        assert_eq!(decompressed, original);
+        check_roundtrip(&original);
     }
 
     #[test]
-    fn test_decompress_invalid_deflate_data() {
-        let garbage = vec![0xFF, 0xFE, 0xFD, 0xFC];
-        let result = decompress(&garbage);
-
-        assert!(result.is_err());
+    fn a_corrupt_entry_is_reported() {
+        check_unreadable(&[0xFF, 0xFE, 0xFD, 0xFC]);
     }
 
     #[test]
-    fn test_decompress_valid_deflate_but_invalid_utf8() {
-        let invalid_utf8: &[u8] = &[0x80, 0x81, 0x82];
-        let compressed = compress(invalid_utf8).expect("compression failed");
-        let result = decompress(&compressed);
-
-        assert!(result.is_err());
+    fn an_entry_that_is_not_utf8_is_reported() {
+        let compressed = compress(&[0x80, 0x81, 0x82]).expect("compression should not fail");
+        check_unreadable(&compressed);
     }
 }

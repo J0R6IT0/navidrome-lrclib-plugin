@@ -96,137 +96,210 @@ fn gap_warrants_blank(pending: &[String], next: &str) -> bool {
 mod tests {
     use super::strip_section_labels;
 
-    mod strip_section_labels_tests {
-        use super::strip_section_labels;
+    fn trim_indent(text: &str) -> String {
+        let text = text.strip_prefix('\n').unwrap_or(text);
+        let indent = text
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.len() - line.trim_start().len())
+            .min()
+            .unwrap_or(0);
 
-        #[test]
-        fn test_basic_removal() {
-            let input = "[Verse 1]\nHello there\n[Chorus]\nWe will rock you";
-            let expected = "Hello there\nWe will rock you";
-            assert_eq!(strip_section_labels(input), expected);
-        }
+        text.lines()
+            .map(|line| line.get(indent..).unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim_end()
+            .to_owned()
+    }
 
-        #[test]
-        fn test_variants_and_suffixes() {
-            let input =
-                "[Verse 2]\n[Pre-Chorus: Lead]\n[Hook - Artist]\n[Chorus 3x]\n[Outro (Fade)]";
-            let expected = "";
-            assert_eq!(strip_section_labels(input), expected);
-        }
+    #[track_caller]
+    fn check(input: &str, expected: &str) {
+        assert_eq!(
+            strip_section_labels(&trim_indent(input)),
+            trim_indent(expected)
+        );
+    }
 
-        #[test]
-        fn test_lrc_format_preserves_timestamps() {
-            let input = "[00:10.00][Verse 1]First line\n[00:15.00][Chorus]Second line";
-            let expected = "[00:10.00]First line\n[00:15.00]Second line";
-            assert_eq!(strip_section_labels(input), expected);
-        }
+    #[track_caller]
+    fn check_label(label: &str) {
+        check(&format!("[{label}]\nHello world"), "Hello world");
+    }
 
-        #[test]
-        fn test_case_insensitivity() {
-            let input = "[VERSE 1]\nHello\n[chorus]\nRock you";
-            let expected = "Hello\nRock you";
-            assert_eq!(strip_section_labels(input), expected);
-        }
+    #[test]
+    fn label_lines_are_dropped() {
+        check(
+            "
+            [Verse 1]
+            Hello there
+            [Chorus]
+            We will rock you",
+            "
+            Hello there
+            We will rock you",
+        );
 
-        #[test]
-        fn test_word_boundary_safety() {
-            let input = "[00:10.00]Breaking the [Chains]\n[Outrageous] behavior";
-            let expected = "[00:10.00]Breaking the [Chains]\n[Outrageous] behavior";
-            assert_eq!(strip_section_labels(input), expected);
-        }
+        check(
+            "
+            [Verse 2]
+            [Pre-Chorus: Lead]
+            [Hook - Artist]
+            [Chorus 3x]
+            [Outro (Fade)]",
+            "",
+        );
 
-        #[test]
-        fn test_mid_line_labels() {
-            let input = "[Chorus] We will [Chorus] rock you";
-            let expected = "We will rock you";
-            assert_eq!(strip_section_labels(input), expected);
-        }
+        check(
+            "
+            [00:10.00][Verse 1]First line
+            [00:15.00][Chorus]Second line",
+            "
+            [00:10.00]First line
+            [00:15.00]Second line",
+        );
 
-        #[test]
-        fn test_hyphenated_variants() {
-            let input =
-                "[Pre-Chorus]\nLet's go\n[Pre Chorus]\nLet's go again\n[Prechorus]\nOne more time";
-            let expected = "Let's go\nLet's go again\nOne more time";
-            assert_eq!(strip_section_labels(input), expected);
-        }
+        check(
+            "
+            [00:00.00][Verse]
+            [00:02.00]Hi",
+            "[00:02.00]Hi",
+        );
+    }
 
-        #[test]
-        fn test_ad_lib_variant() {
-            let input = "[Ad-lib] Ooh yeah\n[Adlib] Aah";
-            let expected = "Ooh yeah\nAah";
-            assert_eq!(strip_section_labels(input), expected);
+    #[test]
+    fn labels_are_detected() {
+        for label in [
+            "Verse 1",
+            "VERSE 1",
+            "chorus",
+            "Pre-Chorus",
+            "Pre Chorus",
+            "Prechorus",
+            "Post-Chorus",
+            "Ad-lib",
+            "Adlib",
+            "Hook - Artist",
+            "Chorus 3x",
+            "Outro (Fade)",
+            "Coro",
+            "Verso",
+            "Puente",
+            "Interludio",
+            "Refrán",
+        ] {
+            check_label(label);
         }
+    }
 
-        #[test]
-        fn test_enhanced_lrc_label_line_removed() {
-            let input = concat!(
-                "[00:00.06]<00:00.06>[<00:00.13>Intro<00:00.20>]<00:00.27>\n",
-                "[00:00.27]<00:00.27>Getting <00:00.72>late"
-            );
-            let expected = "[00:00.27]<00:00.27>Getting <00:00.72>late";
-            assert_eq!(strip_section_labels(input), expected);
-        }
+    #[test]
+    fn normal_words_that_start_like_labels_are_kept() {
+        check(
+            "
+            [00:10.00]Breaking the [Chains]
+            [Outrageous] behavior",
+            "
+            [00:10.00]Breaking the [Chains]
+            [Outrageous] behavior",
+        );
+        check(
+            "
+            [00:00.00]Outro line
+            [00:02.00][Outro]
+            [00:04.00]End",
+            "
+            [00:00.00]Outro line
+            [00:04.00]End",
+        );
+    }
 
-        #[test]
-        fn test_enhanced_lrc_word_tags_preserved() {
-            let input = "[00:10.00]<00:10.00>Hello <00:10.50>world";
-            assert_eq!(strip_section_labels(input), input);
-        }
+    #[test]
+    fn a_label_is_removed_from_a_line() {
+        check("[Chorus] We will [Chorus] rock you", "We will rock you");
+    }
 
-        #[test]
-        fn test_lrc_label_and_following_blank_removed() {
-            let input = "[00:00.00]Intro\n[00:02.00][Verse]\n[00:04.00]\n[00:06.00]First";
-            let expected = "[00:00.00]Intro\n[00:06.00]First";
-            assert_eq!(strip_section_labels(input), expected);
-        }
+    #[test]
+    fn labels_inside_timestamps_are_dropped() {
+        check(
+            "
+            [00:00.06]<00:00.06>[<00:00.13>Intro<00:00.20>]<00:00.27>
+            [00:00.27]<00:00.27>Getting <00:00.72>late",
+            "[00:00.27]<00:00.27>Getting <00:00.72>late",
+        );
+    }
 
-        #[test]
-        fn test_lrc_label_and_preceding_blank_removed() {
-            let input = "[00:00.00]A\n[00:02.00]\n[00:04.00][Verse]\n[00:06.00]B";
-            let expected = "[00:00.00]A\n[00:06.00]B";
-            assert_eq!(strip_section_labels(input), expected);
-        }
+    #[test]
+    fn normal_words_are_not_modified() {
+        let line = "[00:10.00]<00:10.00>Hello <00:10.50>world";
+        check(line, line);
+    }
 
-        #[test]
-        fn test_lrc_label_and_blanks_both_sides_removed() {
-            let input = "[00:00.00]A\n[00:02.00]\n[00:04.00][Verse]\n[00:06.00]\n[00:08.00]B";
-            let expected = "[00:00.00]A\n[00:02.00]\n[00:08.00]B";
-            assert_eq!(strip_section_labels(input), expected);
-        }
+    #[test]
+    fn blank_lines_next_to_labels_are_removed() {
+        check(
+            "
+            [00:00.00]Intro
+            [00:02.00][Verse]
+            [00:04.00]
+            [00:06.00]First",
+            "
+            [00:00.00]Intro
+            [00:06.00]First",
+        );
+        check(
+            "
+            [00:00.00]A
+            [00:02.00]
+            [00:04.00][Verse]
+            [00:06.00]B",
+            "
+            [00:00.00]A
+            [00:06.00]B",
+        );
+        check(
+            "
+            [00:00.00]A
+            [00:02.00]
+            [00:04.00][Verse]
+            [00:06.00]
+            [00:08.00]B",
+            "
+            [00:00.00]A
+            [00:02.00]
+            [00:08.00]B",
+        );
+    }
 
-        #[test]
-        fn test_lrc_large_gap_keeps_blank() {
-            let input = "[00:01.00]Foo\n[00:03.00]\n[00:03.00][Chorus]\n[00:10.00]Bar";
-            let expected = "[00:01.00]Foo\n[00:03.00]\n[00:10.00]Bar";
-            assert_eq!(strip_section_labels(input), expected);
-        }
+    #[test]
+    fn a_long_gap_keeps_one_blank_line() {
+        check(
+            "
+            [00:01.00]Foo
+            [00:03.00]
+            [00:03.00][Chorus]
+            [00:10.00]Bar",
+            "
+            [00:01.00]Foo
+            [00:03.00]
+            [00:10.00]Bar",
+        );
+        check(
+            "
+            [00:01.00]Foo
+            [00:03.00]
+            [00:03.00][Chorus]
+            [00:04.00]Bar",
+            "
+            [00:01.00]Foo
+            [00:04.00]Bar",
+        );
+    }
 
-        #[test]
-        fn test_lrc_small_gap_drops_blank() {
-            let input = "[00:01.00]Foo\n[00:03.00]\n[00:03.00][Chorus]\n[00:04.00]Bar";
-            let expected = "[00:01.00]Foo\n[00:04.00]Bar";
-            assert_eq!(strip_section_labels(input), expected);
-        }
-
-        #[test]
-        fn test_lrc_label_line_always_removed() {
-            let input = "[00:00.00]Outro line\n[00:02.00][Outro]\n[00:04.00]End";
-            let expected = "[00:00.00]Outro line\n[00:04.00]End";
-            assert_eq!(strip_section_labels(input), expected);
-        }
-
-        #[test]
-        fn test_lrc_leading_label_dropped() {
-            let input = "[00:00.00][Verse]\n[00:02.00]Hi";
-            let expected = "[00:02.00]Hi";
-            assert_eq!(strip_section_labels(input), expected);
-        }
-
-        #[test]
-        fn test_lrc_blank_without_adjacent_label_kept() {
-            let input = "[00:00.00]A\n[00:02.00]\n[00:04.00]B";
-            let expected = "[00:00.00]A\n[00:02.00]\n[00:04.00]B";
-            assert_eq!(strip_section_labels(input), expected);
-        }
+    #[test]
+    fn a_regular_blank_line_is_kept() {
+        let lines = "
+            [00:00.00]A
+            [00:02.00]
+            [00:04.00]B";
+        check(lines, lines);
     }
 }

@@ -58,120 +58,111 @@ fn words_value(trimmed: &str) -> Option<&str> {
 mod tests {
     use super::*;
 
-    const PLAIN: &str = concat!(
-        "version: '1.0'\n",
-        "metadata:\n",
-        "  title: Some Song\n",
-        "plain: |-\n",
-        "  First line\n",
-        "  Second line\n",
-    );
-
-    const LINE: &str = concat!(
-        "version: '1.0'\n",
-        "metadata:\n",
-        "  title: Some Song\n",
-        "lines:\n",
-        "- text: First line\n",
-        "  start_ms: 8340\n",
-        "  end_ms: 12080\n",
-        "plain: |-\n",
-        "  First line\n",
-    );
-
-    const WORD: &str = concat!(
-        "version: \"1.0\"\n",
-        "lines:\n",
-        "  - text: Just a smile\n",
-        "    words:\n",
-        "      - text: \"Just \"\n",
-        "        start_ms: 6070\n",
-        "    start_ms: 6070\n",
-        "    end_ms: 10880\n",
-        "plain: |-\n",
-        "  Just a smile\n",
-    );
-
-    #[test]
-    fn test_plain_without_lines() {
-        assert_eq!(sync_level(PLAIN), SyncLevel::Plain);
+    #[track_caller]
+    fn check(doc: &str, expected: SyncLevel) {
+        assert_eq!(sync_level(doc), expected, "{doc}");
     }
 
     #[test]
-    fn test_empty_lines_list_is_plain() {
-        let doc = concat!(
-            "version: '1.0'\n",
-            "metadata:\n",
-            "  title: Creep\n",
-            "lines: []\n",
-            "plain: |-\n",
-            "  When you were here before\n",
+    fn no_timed_lines_is_plain() {
+        check(
+            concat!(
+                "version: '1.0'\n",
+                "metadata:\n",
+                "  title: Some Song\n",
+                "plain: |-\n",
+                "  First line\n",
+                "  Second line\n",
+            ),
+            SyncLevel::Plain,
         );
-        assert_eq!(sync_level(doc), SyncLevel::Plain);
-    }
-
-    #[test]
-    fn test_line_timed() {
-        assert_eq!(sync_level(LINE), SyncLevel::Line);
-    }
-
-    #[test]
-    fn test_word_timed() {
-        assert_eq!(sync_level(WORD), SyncLevel::Word);
-    }
-
-    #[test]
-    fn test_empty_words_list_is_line() {
-        let doc = concat!(
-            "lines:\n",
-            "  - text: \"\"\n",
-            "    words: []\n",
-            "    start_ms: 117410\n",
+        check(
+            concat!(
+                "version: '1.0'\n",
+                "metadata:\n",
+                "  title: Creep\n",
+                "lines: []\n",
+                "plain: |-\n",
+                "  When you were here before\n",
+            ),
+            SyncLevel::Plain,
         );
-        assert_eq!(sync_level(doc), SyncLevel::Line);
-    }
-
-    #[test]
-    fn test_one_word_timed_line_wins() {
-        let doc = concat!(
-            "lines:\n",
-            "  - text: \"\"\n",
-            "    words: []\n",
-            "    start_ms: 0\n",
-            "  - text: Hello\n",
-            "    words:\n",
-            "      - text: Hello\n",
-            "        start_ms: 100\n",
-            "    start_ms: 100\n",
+        check(
+            "lines:\n- text: First line\n- text: Second line\n",
+            SyncLevel::Plain,
         );
-        assert_eq!(sync_level(doc), SyncLevel::Word);
+        check("", SyncLevel::Plain);
     }
 
     #[test]
-    fn test_flow_style_words_list() {
-        let doc = "lines:\n  - text: Hi\n    words: [{text: Hi, start_ms: 10}]\n";
-        assert_eq!(sync_level(doc), SyncLevel::Word);
-    }
-
-    #[test]
-    fn test_untimed_lines_are_plain() {
-        let doc = "lines:\n- text: First line\n- text: Second line\n";
-        assert_eq!(sync_level(doc), SyncLevel::Plain);
-    }
-
-    #[test]
-    fn test_plain_block_content_is_not_scanned() {
-        let doc = concat!(
-            "version: '1.0'\n",
-            "plain: |-\n",
-            "  words:\n",
-            "  - start_ms: not really yaml\n",
+    fn lines_with_a_start_are_line_synced() {
+        check(
+            concat!(
+                "version: '1.0'\n",
+                "metadata:\n",
+                "  title: Some Song\n",
+                "lines:\n",
+                "- text: First line\n",
+                "  start_ms: 8340\n",
+                "  end_ms: 12080\n",
+                "plain: |-\n",
+                "  First line\n",
+            ),
+            SyncLevel::Line,
         );
-        assert_eq!(sync_level(doc), SyncLevel::Plain);
     }
 
     #[test]
-    fn test_empty_document_is_plain() {
-        assert_eq!(sync_level(""), SyncLevel::Plain);
+    fn lines_with_words_are_word_synced() {
+        check(
+            concat!(
+                "version: \"1.0\"\n",
+                "lines:\n",
+                "  - text: Just a smile\n",
+                "    words:\n",
+                "      - text: \"Just \"\n",
+                "        start_ms: 6070\n",
+                "    start_ms: 6070\n",
+                "    end_ms: 10880\n",
+                "plain: |-\n",
+                "  Just a smile\n",
+            ),
+            SyncLevel::Word,
+        );
+        check(
+            "lines:\n  - text: Hi\n    words: [{text: Hi, start_ms: 10}]\n",
+            SyncLevel::Word,
+        );
+    }
+
+    #[test]
+    fn an_empty_words_list_is_only_line_synced() {
+        check(
+            concat!(
+                "lines:\n",
+                "  - text: \"\"\n",
+                "    words: []\n",
+                "    start_ms: 117410\n",
+            ),
+            SyncLevel::Line,
+        );
+    }
+
+    #[test]
+    fn a_single_line_with_words_is_word_synced() {
+        check(
+            concat!(
+                "lines:\n",
+                "  - text: \"\"\n",
+                "    words: []\n",
+                "    start_ms: 0\n",
+                "  - text: Hello\n",
+                "    words:\n",
+                "      - text: Hello\n",
+                "        start_ms: 100\n",
+                "    start_ms: 100\n",
+            ),
+            SyncLevel::Word,
+        );
     }
 }
