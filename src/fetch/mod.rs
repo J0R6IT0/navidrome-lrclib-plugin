@@ -243,12 +243,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_provider_label_without_params() {
+    fn provider_without_params_label_has_only_name() {
         assert_eq!(provider_label("kugou", &[]), "kugou");
     }
 
     #[test]
-    fn test_provider_label_with_params() {
+    fn provider_label_includes_params() {
         let params = [("baseUrl", "http://localhost:7592".to_string())];
         assert_eq!(
             provider_label("lrclib", &params),

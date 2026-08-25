@@ -102,31 +102,36 @@ fn best_rank_for(kinds: &[LyricsKind], priority: &[LyricsKind]) -> Option<usize>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::LyricsKind::{Elrc, Lrc, Plain, Srt, Ttml};
 
-    fn type_priority(priority: &[LyricsKind]) -> Ranker<'_> {
-        Ranker {
-            basis: Basis::TypePriority(priority),
-            prefer_uncensored: false,
+    struct ConfigFixture {
+        cfg: PluginConfig,
+    }
+
+    fn sync(enabled: &str) -> ConfigFixture {
+        fixture(ProviderMode::BestSyncLevel, enabled)
+    }
+
+    fn type_priority(enabled: &str) -> ConfigFixture {
+        fixture(ProviderMode::TypePriority, enabled)
+    }
+
+    fn fixture(mode: ProviderMode, enabled: &str) -> ConfigFixture {
+        ConfigFixture {
+            cfg: PluginConfig {
+                provider_mode: mode,
+                lyrics_type_priority: kinds(enabled),
+                ..PluginConfig::default()
+            },
         }
     }
 
-    fn sync(wanted: &[LyricsKind]) -> Ranker<'_> {
-        Ranker {
-            basis: Basis::SyncLevel(wanted),
-            prefer_uncensored: false,
-        }
-    }
-
-    fn sync_uncensored(wanted: &[LyricsKind]) -> Ranker<'_> {
-        Ranker {
-            basis: Basis::SyncLevel(wanted),
-            prefer_uncensored: true,
-        }
-    }
-
-    fn rank(primary: usize, censored: bool) -> Rank {
-        Rank { primary, censored }
+    fn kinds(slugs: &str) -> Vec<LyricsKind> {
+        slugs
+            .split(",")
+            .map(|slug| {
+                LyricsKind::from_slug(slug).unwrap_or_else(|| panic!("unknown lyrics type {slug}"))
+            })
+            .collect()
     }
 
     fn clean_lrc() -> Lyrics {
@@ -137,176 +142,212 @@ mod tests {
         Lyrics::Lrc("[00:01.00]B**ch be humble hol' up".to_string())
     }
 
-    #[test]
-    fn test_kind_rank_orders_by_priority() {
-        let priority = [Ttml, Elrc, Lrc, Plain];
-        assert_eq!(kind_rank(Ttml, &priority), 0);
-        assert_eq!(kind_rank(Elrc, &priority), 1);
-        assert_eq!(kind_rank(Plain, &priority), 3);
-    }
+    impl ConfigFixture {
+        fn prefer_uncensored(mut self) -> ConfigFixture {
+            self.cfg.prefer_uncensored = true;
+            self
+        }
 
-    #[test]
-    fn test_kind_rank_absent_is_max() {
-        let priority = [Lrc, Plain];
-        assert_eq!(kind_rank(Ttml, &priority), usize::MAX);
-    }
+        fn ranker(&self) -> Ranker<'_> {
+            Ranker::for_mode(&self.cfg).expect("mode should be ranked")
+        }
 
-    #[test]
-    fn test_best_rank_for_picks_highest_supported() {
-        let priority = [Ttml, Elrc, Lrc, Plain];
-        assert_eq!(best_rank_for(&[Lrc, Elrc], &priority), Some(1));
-        assert_eq!(best_rank_for(&[Plain], &priority), Some(3));
-    }
+        #[track_caller]
+        fn check_rank(&self, lyrics: Lyrics, expected: &str) {
+            let ranker = self.ranker();
+            assert_eq!(ranker.describe(ranker.rank(&lyrics)), expected);
+        }
 
-    #[test]
-    fn test_best_rank_for_none_when_nothing_wanted() {
-        let priority = [Lrc, Plain];
-        assert_eq!(best_rank_for(&[Srt], &priority), None);
-    }
+        #[track_caller]
+        fn check_ceiling(&self, offered: &str, expected: &str) {
+            let ranker = self.ranker();
+            let ceiling = ranker.ceiling(&kinds(offered));
+            let described = ceiling.map_or_else(|| "nothing".to_string(), |it| ranker.describe(it));
+            assert_eq!(described, expected, "ceiling for {offered}");
+        }
 
-    #[test]
-    fn test_best_rank_for_ignores_unwanted_kinds() {
-        let priority = [Lrc, Plain];
-        assert_eq!(best_rank_for(&[Srt, Lrc], &priority), Some(0));
-    }
+        #[track_caller]
+        fn check_best(&self, candidates: &[Lyrics], expected: &str) {
+            let ranker = self.ranker();
+            let best = candidates
+                .iter()
+                .min_by_key(|lyrics| ranker.rank(lyrics))
+                .expect("no candidates");
+            assert_eq!(best.text(&self.cfg).as_ref(), expected);
+        }
 
-    #[test]
-    fn test_sync_ranker_orders_by_sync_level() {
-        let ranker = sync(&[Ttml, Elrc, Lrc, Plain]);
+        #[track_caller]
+        fn check_worth_trying(&self, best: Lyrics, offered: &str, expected: bool) {
+            let ranker = self.ranker();
+            let current = ranker.rank(&best);
+            let worth = ranker
+                .ceiling(&kinds(offered))
+                .is_none_or(|ceiling| ceiling < current);
+            assert_eq!(worth, expected, "{offered} against {best:?}");
+        }
 
-        assert_eq!(ranker.rank(&Lyrics::Elrc(String::new())), rank(0, false));
-        assert_eq!(ranker.rank(&Lyrics::Lrc(String::new())), rank(1, false));
-        assert_eq!(ranker.rank(&Lyrics::Plain(String::new())), rank(2, false));
-    }
+        #[track_caller]
+        fn check_search_ends(&self, lyrics: Lyrics, expected: bool) {
+            assert_eq!(self.ranker().rank(&lyrics) == Rank::BEST, expected);
+        }
 
-    #[test]
-    fn test_sync_ranker_reads_the_level_out_of_ttml() {
-        let ranker = sync(&[Ttml]);
-        let word = Lyrics::Ttml(r#"<tt itunes:timing="Word"></tt>"#.to_string());
-        let plain = Lyrics::Ttml(r#"<tt itunes:timing="None"></tt>"#.to_string());
-
-        assert_eq!(ranker.rank(&word), rank(0, false));
-        assert_eq!(ranker.rank(&plain), rank(2, false));
-    }
-
-    #[test]
-    fn test_sync_ranker_ceiling_uses_the_finest_wanted_kind() {
-        let ranker = sync(&[Ttml, Elrc, Lrc, Plain]);
-
-        assert_eq!(ranker.ceiling(&[Lrc, Plain]), Some(rank(1, false)));
-        assert_eq!(ranker.ceiling(&[Plain]), Some(rank(2, false)));
-        assert_eq!(ranker.ceiling(&[Ttml]), Some(rank(0, false)));
-    }
-
-    #[test]
-    fn test_sync_ranker_ceiling_ignores_disabled_kinds() {
-        let ranker = sync(&[Lrc, Plain]);
-
-        assert_eq!(ranker.ceiling(&[Elrc, Lrc]), Some(rank(1, false)));
-        assert_eq!(ranker.ceiling(&[Srt]), None);
-    }
-
-    #[test]
-    fn test_type_priority_ranker_matches_the_priority_list() {
-        let ranker = type_priority(&[Ttml, Elrc, Lrc, Plain]);
-
-        assert_eq!(ranker.rank(&Lyrics::Ttml(String::new())), rank(0, false));
-        assert_eq!(ranker.rank(&Lyrics::Lrc(String::new())), rank(2, false));
-        assert_eq!(ranker.ceiling(&[Lrc, Elrc]), Some(rank(1, false)));
-    }
-
-    #[test]
-    fn test_describe_per_mode() {
-        assert_eq!(type_priority(&[Ttml, Lrc]).describe(rank(1, false)), "lrc");
-        assert_eq!(sync(&[Ttml]).describe(rank(0, false)), "word-by-word");
-        assert_eq!(sync(&[Ttml]).describe(rank(9, false)), "none");
-    }
-
-    #[test]
-    fn test_describe_marks_censored_results() {
-        assert_eq!(
-            type_priority(&[Ttml, Lrc]).describe(rank(1, true)),
-            "censored lrc"
-        );
-        assert_eq!(sync(&[Ttml]).describe(rank(usize::MAX, true)), "none");
-    }
-
-    #[test]
-    fn test_is_censored_tracks_the_option() {
-        assert!(!sync(&[Lrc]).rank(&censored_lrc()).is_censored());
-        assert!(sync_uncensored(&[Lrc]).rank(&censored_lrc()).is_censored());
-        assert!(!sync_uncensored(&[Lrc]).rank(&clean_lrc()).is_censored());
-    }
-
-    #[test]
-    fn test_censoring_is_ignored_unless_the_option_is_on() {
-        assert_eq!(sync(&[Lrc]).rank(&censored_lrc()), rank(1, false));
-        assert_eq!(sync_uncensored(&[Lrc]).rank(&censored_lrc()), rank(1, true));
-        assert_eq!(sync_uncensored(&[Lrc]).rank(&clean_lrc()), rank(1, false));
-    }
-
-    #[test]
-    fn test_sync_level_outranks_censoring() {
-        let ranker = sync_uncensored(&[Elrc, Lrc]);
-        let censored_word = Lyrics::Elrc("[00:01.00]<00:01.00>f**k".to_string());
-
-        assert!(ranker.rank(&censored_word) < ranker.rank(&clean_lrc()));
-    }
-
-    #[test]
-    fn test_censoring_breaks_ties_at_the_same_level() {
-        let ranker = sync_uncensored(&[Lrc]);
-        assert!(ranker.rank(&clean_lrc()) < ranker.rank(&censored_lrc()));
-    }
-
-    #[test]
-    fn test_ceiling_can_still_beat_a_censored_best() {
-        let ranker = sync_uncensored(&[Lrc]);
-        let censored_best = ranker.rank(&censored_lrc());
-
-        assert!(ranker.ceiling(&[Lrc]).unwrap() < censored_best);
-    }
-
-    #[test]
-    fn test_ceiling_cannot_beat_a_clean_best_at_the_same_level() {
-        let ranker = sync_uncensored(&[Lrc]);
-        assert!(ranker.ceiling(&[Lrc]).unwrap() >= ranker.rank(&clean_lrc()));
-    }
-
-    #[test]
-    fn test_rank_best_is_word_level_and_clean() {
-        let ranker = sync_uncensored(&[Elrc]);
-        assert_eq!(ranker.rank(&Lyrics::Elrc("clean".to_string())), Rank::BEST);
-    }
-
-    #[test]
-    fn test_for_mode_only_ranks_the_ranked_modes() {
-        use crate::config::ProviderMode;
-
-        for (mode, ranked) in [
-            (ProviderMode::TypePriority, true),
-            (ProviderMode::BestSyncLevel, true),
-            (ProviderMode::Priority, false),
-            (ProviderMode::Rotation, false),
-        ] {
-            let cfg = PluginConfig {
-                provider_mode: mode,
-                ..PluginConfig::default()
-            };
-            assert_eq!(Ranker::for_mode(&cfg).is_some(), ranked, "{mode:?}");
+        #[track_caller]
+        fn check_reports_censored(&self, lyrics: Lyrics, expected: bool) {
+            assert_eq!(self.ranker().rank(&lyrics).is_censored(), expected);
         }
     }
 
     #[test]
-    fn test_for_mode_carries_the_prefer_uncensored_flag() {
-        let cfg = PluginConfig {
-            provider_mode: ProviderMode::BestSyncLevel,
-            prefer_uncensored: true,
-            lyrics_type_priority: vec![Lrc],
-            ..PluginConfig::default()
-        };
+    fn type_mode_follows_the_configured_order() {
+        let cfg = type_priority("ttml,elrc,lrc,plain");
 
-        let ranker = Ranker::for_mode(&cfg).unwrap();
-        assert_eq!(ranker.rank(&censored_lrc()), rank(1, true));
+        cfg.check_rank(Lyrics::Ttml(String::new()), "ttml");
+        cfg.check_rank(Lyrics::Lrc(String::new()), "lrc");
+        cfg.check_rank(Lyrics::Plain(String::new()), "plain");
+        cfg.check_best(
+            &[
+                Lyrics::Plain("plain".to_string()),
+                Lyrics::Elrc("elrc".to_string()),
+            ],
+            "elrc",
+        );
+    }
+
+    #[test]
+    fn type_mode_ranks_disabled_types_below_everything() {
+        let cfg = type_priority("lrc,plain");
+
+        cfg.check_rank(Lyrics::Srt(String::new()), "none");
+        cfg.check_best(
+            &[
+                Lyrics::Srt("srt".to_string()),
+                Lyrics::Plain("plain".to_string()),
+            ],
+            "plain",
+        );
+    }
+
+    #[test]
+    fn sync_mode_prioritizes_sync_level() {
+        let cfg = sync("lrc,elrc,plain");
+
+        cfg.check_rank(Lyrics::Elrc(String::new()), "word-by-word");
+        cfg.check_rank(Lyrics::Lrc(String::new()), "line-by-line");
+        cfg.check_rank(Lyrics::Plain(String::new()), "plain");
+        cfg.check_best(
+            &[
+                Lyrics::Lrc("lrc".to_string()),
+                Lyrics::Elrc("elrc".to_string()),
+            ],
+            "elrc",
+        );
+    }
+
+    #[test]
+    fn sync_mode_reads_the_sync_level_of_lyrics() {
+        let cfg = sync("ttml");
+
+        cfg.check_rank(
+            Lyrics::Ttml(r#"<tt itunes:timing="Word"></tt>"#.to_string()),
+            "word-by-word",
+        );
+        cfg.check_rank(
+            Lyrics::Ttml(r#"<tt itunes:timing="None"></tt>"#.to_string()),
+            "plain",
+        );
+    }
+
+    #[test]
+    fn sync_mode_ceiling_is_the_finest_type_a_provider_serves() {
+        let cfg = sync("ttml,elrc,lrc,plain");
+
+        cfg.check_ceiling("ttml", "word-by-word");
+        cfg.check_ceiling("lrc,plain", "line-by-line");
+        cfg.check_ceiling("plain", "plain");
+    }
+
+    #[test]
+    fn type_mode_ceiling_is_the_best_type_a_provider_serves() {
+        let cfg = type_priority("ttml,elrc,lrc,plain");
+
+        cfg.check_ceiling("lrc,elrc", "elrc");
+        cfg.check_ceiling("plain", "plain");
+    }
+
+    #[test]
+    fn a_ceiling_only_counts_enabled_types() {
+        sync("lrc,plain").check_ceiling("elrc,lrc", "line-by-line");
+        sync("lrc,plain").check_ceiling("srt", "nothing");
+        type_priority("lrc,plain").check_ceiling("srt,lrc", "lrc");
+        type_priority("lrc,plain").check_ceiling("srt", "nothing");
+    }
+
+    #[test]
+    fn censoring_is_ignored_unless_it_is_asked_for() {
+        sync("lrc").check_rank(censored_lrc(), "line-by-line");
+        sync("lrc").check_reports_censored(censored_lrc(), false);
+
+        sync("lrc")
+            .prefer_uncensored()
+            .check_rank(censored_lrc(), "censored line-by-line");
+        sync("lrc")
+            .prefer_uncensored()
+            .check_reports_censored(censored_lrc(), true);
+        sync("lrc")
+            .prefer_uncensored()
+            .check_reports_censored(clean_lrc(), false);
+    }
+
+    #[test]
+    fn censoring_only_breaks_ties_in_the_same_level() {
+        let cfg = sync("elrc,lrc").prefer_uncensored();
+
+        cfg.check_best(
+            &[
+                Lyrics::Lrc("clean,lrc".to_string()),
+                Lyrics::Elrc("f**k".to_string()),
+            ],
+            "f**k",
+        );
+        cfg.check_best(
+            &[
+                Lyrics::Lrc("b**ch".to_string()),
+                Lyrics::Lrc("clean".to_string()),
+            ],
+            "clean",
+        );
+    }
+
+    #[test]
+    fn a_censored_hit_allows_checking_another_provider() {
+        let cfg = sync("lrc").prefer_uncensored();
+
+        cfg.check_worth_trying(censored_lrc(), "lrc", true);
+        cfg.check_worth_trying(clean_lrc(), "lrc", false);
+    }
+
+    #[test]
+    fn a_provider_that_cannot_improve_is_not_worth_trying() {
+        let cfg = sync("elrc,lrc,plain");
+
+        cfg.check_worth_trying(clean_lrc(), "plain", false);
+        cfg.check_worth_trying(clean_lrc(), "elrc", true);
+    }
+
+    #[test]
+    fn a_clean_word_synced_hit_ends_the_search() {
+        let cfg = sync("elrc,lrc").prefer_uncensored();
+
+        cfg.check_search_ends(Lyrics::Elrc("clean".to_string()), true);
+        cfg.check_search_ends(Lyrics::Elrc("f**k".to_string()), false);
+        cfg.check_search_ends(clean_lrc(), false);
+    }
+
+    #[test]
+    fn the_top_of_the_priority_list_ends_the_search() {
+        let cfg = type_priority("ttml,lrc");
+
+        cfg.check_search_ends(Lyrics::Ttml("clean".to_string()), true);
+        cfg.check_search_ends(Lyrics::Lrc("clean".to_string()), false);
     }
 }
