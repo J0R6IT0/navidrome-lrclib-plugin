@@ -8,7 +8,7 @@ pub trait TrackInfoExt {
     fn first_artist(&self) -> Option<&str>;
     fn all_artists(&self) -> String;
     fn duration(&self) -> Duration;
-    fn title_without_parens(&self) -> String;
+    fn clean_title(&self) -> String;
     fn matches_duration(&self, other: Duration, tolerance: Duration) -> bool;
 }
 
@@ -42,7 +42,7 @@ impl TrackInfoExt for TrackInfo {
         Duration::from_secs_f32(self.duration.max(0.0))
     }
 
-    fn title_without_parens(&self) -> String {
+    fn clean_title(&self) -> String {
         let mut out = String::with_capacity(self.title.len());
         let mut depth = 0u32;
 
@@ -55,7 +55,10 @@ impl TrackInfoExt for TrackInfo {
             }
         }
 
-        out.split_whitespace().collect::<Vec<_>>().join(" ")
+        out.split_whitespace()
+            .take_while(|word| !matches!(*word, "-" | "‐" | "‒" | "–" | "—" | "―"))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     fn matches_duration(&self, other: Duration, tolerance: Duration) -> bool {
@@ -75,27 +78,42 @@ mod tests {
     }
 
     #[track_caller]
-    fn check_title_without_parens(input: &str, expected: &str) {
-        assert_eq!(track(input).title_without_parens(), expected);
+    fn check_clean_title(input: &str, expected: &str) {
+        assert_eq!(track(input).clean_title(), expected, "title {input:?}");
     }
 
     #[test]
-    fn strip_parens_removes_bracketed_segments() {
-        check_title_without_parens("Song (Live)", "Song");
-        check_title_without_parens("Song [Remastered 2020]", "Song");
-        check_title_without_parens("Song {Deluxe}", "Song");
-        check_title_without_parens("Song (feat. Artist [Live])", "Song");
-        check_title_without_parens("Song [Remix] (2020)", "Song");
+    fn a_clean_title_drops_bracketed_segments() {
+        check_clean_title("Song (Live)", "Song");
+        check_clean_title("Song [Remastered 2020]", "Song");
+        check_clean_title("Song {Deluxe}", "Song");
+        check_clean_title("Song (feat. Artist [Live])", "Song");
+        check_clean_title("Song [Remix] (2020)", "Song");
     }
 
     #[test]
-    fn strip_parens_removes_whitespace() {
-        check_title_without_parens("Song   (Live)   Version", "Song Version");
+    fn a_clean_title_drops_dash_suffixes() {
+        check_clean_title("Song - Remastered 2011", "Song");
+        check_clean_title("Song - Live - 2011 Remaster", "Song");
+        check_clean_title("Song \u{2013} Live", "Song");
+        check_clean_title("Song \u{2014} Live", "Song");
+        check_clean_title("Song (Live) - Remastered", "Song");
     }
 
     #[test]
-    fn strip_parens_leaves_plain_titles_untouched() {
-        check_title_without_parens("Plain Title", "Plain Title");
-        check_title_without_parens("", "");
+    fn a_clean_title_keeps_dashes_inside_words() {
+        check_clean_title("Song-Title", "Song-Title");
+        check_clean_title("Song -Title", "Song -Title");
+    }
+
+    #[test]
+    fn a_clean_title_collapses_whitespace() {
+        check_clean_title("Song   (Live)   Version", "Song Version");
+    }
+
+    #[test]
+    fn a_clean_title_leaves_plain_titles_untouched() {
+        check_clean_title("Song Title", "Song Title");
+        check_clean_title("", "");
     }
 }

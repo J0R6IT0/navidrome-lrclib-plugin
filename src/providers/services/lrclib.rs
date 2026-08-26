@@ -38,22 +38,52 @@ impl Lrclib {
     }
 
     fn get(&self, track: &TrackInfo) -> ProviderResult<Option<Record>> {
-        let response = Http::get(format!("{}/api/get", self.base_url))
-            .param("artist_name", track.all_artists())
-            .param("track_name", &track.title)
-            .param("album_name", &track.album)
-            .param("duration", track.duration().as_secs().to_string())
-            .send()?;
+        let clean_title = track.clean_title();
+        let attempts: [(&str, Option<&str>); 3] = [
+            (&track.title, Some(track.album.as_str())),
+            (&track.title, None),
+            (clean_title.as_str(), None),
+        ];
 
+        for (title, album) in attempts {
+            match self.try_get(track, title, album)? {
+                Some(record) => return Ok(Some(record)),
+                None => continue,
+            }
+        }
+        Ok(None)
+    }
+
+    fn try_get(
+        &self,
+        track: &TrackInfo,
+        title: &str,
+        album: Option<&str>,
+    ) -> ProviderResult<Option<Record>> {
+        let mut request = Http::get(format!("{}/api/get", self.base_url))
+            .param("artist_name", track.all_artists())
+            .param("track_name", title)
+            .param("duration", track.duration().as_secs().to_string());
+
+        if let Some(album) = album {
+            request = request.param("album_name", album);
+        }
+
+        let response = request.send()?;
         match response.status {
             200 => response.json("get").map(Some),
-            404 => Ok(None),
+            404 | 503 => Ok(None),
             429 => Err(response.rate_limited()),
             _ => Err(response.unexpected_status("the get endpoint")),
         }
     }
 
-    fn search(&self, query: &str) -> ProviderResult<Vec<Record>> {
+    fn search(&self, track: &TrackInfo) -> ProviderResult<Vec<Record>> {
+        let query = match track.first_artist() {
+            Some(artist) => format!("{} {}", artist, track.clean_title()),
+            None => track.clean_title(),
+        };
+
         let response = Http::get(format!("{}/api/search", self.base_url))
             .param("q", query)
             .send()?;
@@ -88,13 +118,8 @@ impl LyricsProvider for Lrclib {
             None => None,
         };
 
-        let query = match track.first_artist() {
-            Some(artist) => format!("{} {}", artist, track.title),
-            None => track.title.to_string(),
-        };
-
         let found = self
-            .search(&query)?
+            .search(track)?
             .into_iter()
             .filter(|record| {
                 record.duration.is_some_and(|d| {

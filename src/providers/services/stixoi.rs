@@ -112,7 +112,7 @@ impl LyricsProvider for Stixoi {
         track: &TrackInfo,
         _cfg: &PluginConfig,
     ) -> ProviderResult<Option<Lyrics>> {
-        let title = track.title_without_parens();
+        let title = track.clean_title();
         if title.is_empty() {
             return Ok(None);
         }
