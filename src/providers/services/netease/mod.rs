@@ -122,16 +122,11 @@ impl LyricsProvider for NetEase {
             return Err(ProviderError::other("track has no artist"));
         }
 
-        let song = match self
-            .search(&track)?
-            .result
-            .songs
-            .into_iter()
-            .find(|record| {
-                record.duration_ms.is_some_and(|d| {
-                    track.matches_duration(Duration::from_millis(d), cfg.duration_tolerance)
-                })
-            }) {
+        let song = match self.search(track)?.result.songs.into_iter().find(|record| {
+            record.duration_ms.is_some_and(|d| {
+                track.matches_duration(Duration::from_millis(d), cfg.duration_tolerance)
+            })
+        }) {
             Some(song) => song,
             None => return Ok(None),
         };

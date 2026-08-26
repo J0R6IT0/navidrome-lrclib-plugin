@@ -148,7 +148,7 @@ impl LyricsProvider for KuGou {
         }
 
         let song = match self
-            .search_song(&track)?
+            .search_song(track)?
             .data
             .info
             .into_iter()
