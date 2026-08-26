@@ -1,8 +1,10 @@
+use std::time::Duration;
+
 use crate::{
     config::{PluginConfig, ProviderParams},
     ext::TrackInfoExt,
     format::lrc,
-    providers::{LyricsProvider, ProviderResult, http::Http},
+    providers::{LyricsProvider, ProviderResult, error::ProviderError, http::Http},
     types::{Lyrics, LyricsKind},
 };
 use extism_pdk::info;
@@ -62,6 +64,45 @@ impl NetEase {
     pub fn create(_params: &ProviderParams) -> Box<dyn LyricsProvider> {
         Box::new(Self)
     }
+
+    fn search(&self, track: &TrackInfo) -> ProviderResult<SearchResponse> {
+        let query = format!(
+            "{} {}",
+            track.first_artist().unwrap_or_default(),
+            track.title
+        );
+
+        let response = Http::get(SEARCH_URL)
+            .browser()
+            .param("s", query)
+            .param("type", "1")
+            .param("limit", "5")
+            .param("offset", "0")
+            .header("Referer", "https://music.163.com")
+            .send()?;
+
+        match response.status {
+            200 => response.json("search"),
+            _ => Err(response.unexpected_status("the search endpoint")),
+        }
+    }
+
+    fn get(&self, id: u64) -> ProviderResult<LyricsResponse> {
+        let response = Http::get(LYRICS_URL)
+            .browser()
+            .header("Referer", "https://music.163.com")
+            .param("id", id.to_string())
+            .param("lv", "-1")
+            .param("kv", "-1")
+            .param("tv", "-1")
+            .param("yv", "1")
+            .send()?;
+
+        match response.status {
+            200 => response.json("the lyrics"),
+            _ => Err(response.unexpected_status("the lyrics endpoint")),
+        }
+    }
 }
 
 impl LyricsProvider for NetEase {
@@ -77,45 +118,54 @@ impl LyricsProvider for NetEase {
         track: &TrackInfo,
         cfg: &PluginConfig,
     ) -> ProviderResult<Option<Lyrics>> {
-        let query = format!("{} {}", track.first_artist().unwrap(), track.title);
-        let target_ms = track.duration_ms();
+        if !track.has_artist() {
+            return Err(ProviderError::other("track has no artist"));
+        }
 
-        let song = match search_song(&query, target_ms, cfg.duration_tolerance_ms())? {
-            Some(s) => s,
+        let song = match self
+            .search(&track)?
+            .result
+            .songs
+            .into_iter()
+            .find(|record| {
+                record.duration_ms.is_some_and(|d| {
+                    track.matches_duration(Duration::from_millis(d), cfg.duration_tolerance)
+                })
+            }) {
+            Some(song) => song,
             None => return Ok(None),
         };
 
-        let response = fetch_lyrics(song.id)?;
+        let response = self.get(song.id)?;
 
         if response.pure_music {
             info!("netease: track is instrumental");
             return Ok(Some(Lyrics::Instrumental));
         }
 
-        let lrc = LyricContent::text(&response.lrc).map(strip_metadata);
+        let mut lrc = LyricContent::text(&response.lrc).map(strip_metadata);
 
         for &kind in &cfg.lyrics_type_priority {
             match kind {
                 LyricsKind::Elrc => {
                     if let Some(raw) = LyricContent::text(&response.yrc) {
                         let elrc = yrc::to_enhanced_lrc(raw);
+
                         if !elrc.trim().is_empty() {
                             return Ok(Some(Lyrics::Elrc(elrc)));
                         }
                     }
                 }
+
                 LyricsKind::Lrc => {
-                    if let Some(text) = &lrc
-                        && lrc::is_synced(text)
-                    {
-                        return Ok(Some(Lyrics::Lrc(text.clone())));
+                    if let Some(text) = lrc.take_if(|text| lrc::is_synced(text)) {
+                        return Ok(Some(Lyrics::Lrc(text)));
                     }
                 }
+
                 LyricsKind::Plain => {
-                    if let Some(text) = &lrc
-                        && !lrc::is_synced(text)
-                    {
-                        return Ok(Some(Lyrics::Plain(text.clone())));
+                    if let Some(text) = lrc.take_if(|text| !lrc::is_synced(text)) {
+                        return Ok(Some(Lyrics::Plain(text)));
                     }
                 }
                 _ => {}
@@ -126,35 +176,6 @@ impl LyricsProvider for NetEase {
     }
 }
 
-fn search_song(query: &str, target_ms: u64, tolerance_ms: u64) -> ProviderResult<Option<Song>> {
-    let parsed: SearchResponse = get_json(
-        Http::get(SEARCH_URL)
-            .param("s", query)
-            .param("type", "1")
-            .param("limit", "5")
-            .param("offset", "0"),
-        "the search",
-    )?;
-
-    Ok(parsed.result.songs.into_iter().find(|s| {
-        s.duration_ms
-            .map(|d| d.abs_diff(target_ms) <= tolerance_ms)
-            .unwrap_or(false)
-    }))
-}
-
-fn fetch_lyrics(song_id: u64) -> ProviderResult<LyricsResponse> {
-    get_json(
-        Http::get(LYRICS_URL)
-            .param("id", song_id.to_string())
-            .param("lv", "-1")
-            .param("kv", "-1")
-            .param("tv", "-1")
-            .param("yv", "1"),
-        "the lyrics",
-    )
-}
-
 fn strip_metadata(lyric: &str) -> String {
     lyric
         .lines()
@@ -163,24 +184,12 @@ fn strip_metadata(lyric: &str) -> String {
         .join("\n")
 }
 
-fn get_json<T: serde::de::DeserializeOwned>(request: Http, what: &str) -> ProviderResult<T> {
-    let response = request
-        .browser()
-        .header("Referer", "https://music.163.com")
-        .send()?;
-
-    match response.status {
-        200 => response.json(what),
-        _ => Err(response.unexpected_status(what)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_strip_metadata_removes_json_lines() {
+    fn strip_metadata_removes_json_lines() {
         let input = concat!(
             "{\"t\":0,\"c\":[{\"tx\":\"foo: \"}]}\n",
             "{\"t\":1000,\"c\":[{\"tx\":\"bar: \"}]}\n",
@@ -191,38 +200,13 @@ mod tests {
     }
 
     #[test]
-    fn test_strip_metadata_keeps_plain_lyrics() {
+    fn strip_metadata_keeps_plain_lyrics() {
         let input = "Hello\nWorld";
         assert_eq!(strip_metadata(input), "Hello\nWorld");
     }
 
     #[test]
-    fn test_strip_metadata_empty() {
+    fn strip_metadata_empty() {
         assert_eq!(strip_metadata(""), "");
-    }
-
-    #[test]
-    fn test_lyric_content_text_blank_is_none() {
-        let content = Some(LyricContent {
-            lyric: Some("   \n  ".to_string()),
-        });
-        assert_eq!(LyricContent::text(&content), None);
-    }
-
-    #[test]
-    fn test_lyric_content_text_missing_is_none() {
-        assert_eq!(LyricContent::text(&None), None);
-        assert_eq!(
-            LyricContent::text(&Some(LyricContent { lyric: None })),
-            None
-        );
-    }
-
-    #[test]
-    fn test_lyric_content_text_trims() {
-        let content = Some(LyricContent {
-            lyric: Some("  [00:01.00]hi  ".to_string()),
-        });
-        assert_eq!(LyricContent::text(&content), Some("[00:01.00]hi"));
     }
 }

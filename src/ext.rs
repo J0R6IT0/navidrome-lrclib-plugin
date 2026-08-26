@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use nd_pdk::lyrics::TrackInfo;
 
 pub trait TrackInfoExt {
@@ -5,9 +7,9 @@ pub trait TrackInfoExt {
     fn has_artist(&self) -> bool;
     fn first_artist(&self) -> Option<&str>;
     fn all_artists(&self) -> String;
-    fn duration_secs(&self) -> i64;
-    fn duration_ms(&self) -> u64;
+    fn duration(&self) -> Duration;
     fn title_without_parens(&self) -> String;
+    fn matches_duration(&self, other: Duration, tolerance: Duration) -> bool;
 }
 
 impl TrackInfoExt for TrackInfo {
@@ -36,12 +38,8 @@ impl TrackInfoExt for TrackInfo {
             .join(" ")
     }
 
-    fn duration_secs(&self) -> i64 {
-        self.duration.round().max(0.0) as i64
-    }
-
-    fn duration_ms(&self) -> u64 {
-        (self.duration * 1000.0).round().max(0.0) as u64
+    fn duration(&self) -> Duration {
+        Duration::from_secs_f32(self.duration.max(0.0))
     }
 
     fn title_without_parens(&self) -> String {
@@ -58,6 +56,10 @@ impl TrackInfoExt for TrackInfo {
         }
 
         out.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    fn matches_duration(&self, other: Duration, tolerance: Duration) -> bool {
+        other.abs_diff(self.duration()) <= tolerance
     }
 }
 

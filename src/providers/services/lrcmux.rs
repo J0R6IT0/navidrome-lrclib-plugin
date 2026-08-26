@@ -70,7 +70,7 @@ impl Lrcmux {
             .param("artist", track.first_artist().unwrap_or_default())
             .param("title", &track.title)
             .param("album", &track.album)
-            .param("duration", track.duration_secs().to_string());
+            .param("duration", track.duration().as_secs().to_string());
 
         if let Some(sources) = &self.sources {
             request = request.param("sources", sources);

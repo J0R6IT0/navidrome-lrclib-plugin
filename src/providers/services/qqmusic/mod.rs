@@ -124,9 +124,9 @@ impl LyricsProvider for QQMusic {
         cfg: &PluginConfig,
     ) -> ProviderResult<Option<Lyrics>> {
         let query = format!("{} {}", track.title, track.first_artist().unwrap());
-        let target_ms = track.duration_ms();
+        let target_ms = track.duration().as_millis() as u64;
 
-        let song = match find_song(&query, target_ms, cfg.duration_tolerance_ms())? {
+        let song = match find_song(&query, target_ms, cfg.duration_tolerance.as_millis() as u64)? {
             Some(s) => s,
             None => return Ok(None),
         };

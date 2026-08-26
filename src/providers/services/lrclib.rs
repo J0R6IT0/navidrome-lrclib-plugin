@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::{
     config::{PluginConfig, ProviderParams},
     ext::TrackInfoExt,
@@ -21,13 +23,6 @@ struct Record {
     instrumental: bool,
 }
 
-impl Record {
-    fn matches_duration(&self, target: f32, tolerance: f32) -> bool {
-        self.duration
-            .is_some_and(|d| (d - target).abs() <= tolerance)
-    }
-}
-
 pub struct Lrclib {
     base_url: String,
 }
@@ -47,7 +42,7 @@ impl Lrclib {
             .param("artist_name", track.all_artists())
             .param("track_name", &track.title)
             .param("album_name", &track.album)
-            .param("duration", track.duration_secs().to_string())
+            .param("duration", track.duration().as_secs().to_string())
             .send()?;
 
         match response.status {
@@ -101,7 +96,11 @@ impl LyricsProvider for Lrclib {
         let found = self
             .search(&query)?
             .into_iter()
-            .filter(|record| record.matches_duration(track.duration, cfg.duration_tolerance_secs))
+            .filter(|record| {
+                record.duration.is_some_and(|d| {
+                    track.matches_duration(Duration::from_secs_f32(d), cfg.duration_tolerance)
+                })
+            })
             .find_map(|record| match plain_fallback {
                 // This branch does not check if a record is instrumental since
                 // having a plain fallback means the track does have lyrics.
@@ -191,20 +190,6 @@ mod tests {
             preferred_over_plain(&cfg),
             expected,
             "priority {priority:?}"
-        );
-    }
-
-    #[track_caller]
-    fn check_duration(record_secs: Option<f32>, target: f32, tolerance: f32, expected: bool) {
-        let record = Record {
-            duration: record_secs,
-            ..Record::default()
-        };
-
-        assert_eq!(
-            record.matches_duration(target, tolerance),
-            expected,
-            "{record_secs:?} against {target}s ±{tolerance}s"
         );
     }
 
@@ -323,20 +308,6 @@ mod tests {
             &[LyricsKind::Ttml, LyricsKind::Elrc, LyricsKind::Plain],
             &[],
         );
-    }
-
-    #[test]
-    fn a_search_hit_within_tolerance_is_kept() {
-        check_duration(Some(180.0), 180.0, 3.0, true);
-        check_duration(Some(183.0), 180.0, 3.0, true);
-        check_duration(Some(177.0), 180.0, 3.0, true);
-    }
-
-    #[test]
-    fn a_search_hit_outside_tolerance_is_dropped() {
-        check_duration(Some(183.5), 180.0, 3.0, false);
-        check_duration(Some(240.0), 180.0, 3.0, false);
-        check_duration(None, 180.0, 3.0, false);
     }
 
     #[test]

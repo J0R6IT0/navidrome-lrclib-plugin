@@ -120,8 +120,8 @@ impl LyricsProvider for AppleMusic {
         })?;
 
         let query = format!("{} {}", track.title, track.first_artist().unwrap());
-        let target_ms = track.duration_ms();
-        let tolerance_ms = cfg.duration_tolerance_ms();
+        let target_ms = track.duration().as_millis() as u64;
+        let tolerance_ms = cfg.duration_tolerance.as_millis() as u64;
 
         let dev_token = get_dev_token(false)?;
         let result = match self.lookup(&dev_token, token, &query, target_ms, tolerance_ms) {
