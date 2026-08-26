@@ -72,47 +72,42 @@ fn convert(krc: &str) -> String {
 mod tests {
     use super::*;
 
+    #[track_caller]
+    fn check(krc: &str, expected: &str) {
+        assert_eq!(convert(krc), expected);
+    }
+
     #[test]
-    fn test_convert_word_timing() {
-        let krc = "[0,5890]<0,736,0>foo<736,736,0>bar<1472,736,0>baz";
-        assert_eq!(
-            convert(krc),
-            "[00:00.00]<00:00.00>foo<00:00.74>bar<00:01.47>baz<00:02.21>"
+    fn krc_line_to_elrc() {
+        check(
+            "[0,5890]<0,736,0>foo<736,736,0>bar<1472,736,0>baz",
+            "[00:00.00]<00:00.00>foo<00:00.74>bar<00:01.47>baz<00:02.21>",
         );
     }
 
     #[test]
-    fn test_convert_multiple_lines_and_offsets() {
-        let krc = "[5890,5900]<0,1180,0>foo<1180,1180,0>：\n[11790,5900]<0,1180,0>bar";
-        assert_eq!(
-            convert(krc),
-            "[00:05.89]<00:05.89>foo<00:07.07>：<00:08.25>\n[00:11.79]<00:11.79>bar<00:12.97>"
+    fn multiple_lines_to_elrc() {
+        check(
+            "[5890,5900]<0,1180,0>foo<1180,1180,0>：\n[11790,5900]<0,1180,0>bar",
+            "[00:05.89]<00:05.89>foo<00:07.07>：<00:08.25>\n[00:11.79]<00:11.79>bar<00:12.97>",
         );
     }
 
     #[test]
-    fn test_convert_closes_last_word() {
-        let krc = "[0,1000]<0,500,0>hi";
-        assert_eq!(convert(krc), "[00:00.00]<00:00.00>hi<00:00.50>");
+    fn last_word_is_closed() {
+        check("[0,1000]<0,500,0>hi", "[00:00.00]<00:00.00>hi<00:00.50>");
     }
 
     #[test]
-    fn test_convert_parks_a_mid_line_pause_on_the_trailing_space() {
-        let krc = "[129364,6000]<0,464,0>guy <5592,360,0>duh";
-        assert_eq!(
-            convert(krc),
-            "[02:09.36]<02:09.36>guy<02:09.83> <02:14.96>duh<02:15.32>"
+    fn converts_mid_line_pause_on_space() {
+        check(
+            "[129364,6000]<0,464,0>foo <5592,360,0>bar",
+            "[02:09.36]<02:09.36>foo<02:09.83> <02:14.96>bar<02:15.32>",
         );
     }
 
     #[test]
-    fn test_convert_skips_metadata_lines() {
-        let krc = "[ti:Song]\n[ar:Artist]\n[offset:0]\n[0,1000]<0,500,0>hi";
-        assert_eq!(convert(krc), "[00:00.00]<00:00.00>hi<00:00.50>");
-    }
-
-    #[test]
-    fn test_convert_empty() {
+    fn empty_check() {
         assert_eq!(convert(""), "");
     }
 

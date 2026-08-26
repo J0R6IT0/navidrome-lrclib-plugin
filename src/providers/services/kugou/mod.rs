@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::{
     config::{PluginConfig, ProviderParams},
     ext::TrackInfoExt,
@@ -42,7 +44,8 @@ struct TransParam {
 
 #[derive(Debug, Deserialize)]
 struct LyricsSearchResponse {
-    status: u32,
+    // TODO: investigate further if this is needed
+    // status: u32,
     #[serde(default)]
     candidates: Vec<Candidate>,
 }
@@ -60,15 +63,77 @@ struct DownloadResponse {
     content: String,
 }
 
-pub struct Kugou;
+pub struct KuGou;
 
-impl Kugou {
+impl KuGou {
     pub fn create(_params: &ProviderParams) -> Box<dyn LyricsProvider> {
         Box::new(Self)
     }
+
+    fn search_song(&self, track: &TrackInfo) -> ProviderResult<SongSearchResponse> {
+        let keyword = format!(
+            "{} {}",
+            track.title,
+            track.first_artist().unwrap_or_default()
+        );
+
+        let response = Http::get(SONG_SEARCH_URL)
+            .browser()
+            .param("format", "json")
+            .param("keyword", keyword)
+            .param("page", "1")
+            .param("pagesize", "10")
+            .param("showtype", "1")
+            .send()?;
+
+        match response.status {
+            200 => response.json("the song search"),
+            _ => Err(response.unexpected_status("song search endpoint")),
+        }
+    }
+
+    fn search_lyrics(&self, song: &SongInfo) -> ProviderResult<LyricsSearchResponse> {
+        let response = Http::get(LYRICS_SEARCH_URL)
+            .browser()
+            .param("ver", "1")
+            .param("man", "yes")
+            .param("client", "mobi")
+            .param("keyword", "")
+            .param("duration", song.duration.unwrap_or(0).to_string())
+            .param("hash", &song.hash)
+            .param("album_audio_id", "")
+            .send()?;
+
+        match response.status {
+            200 => response.json("the lyrics search"),
+            _ => Err(response.unexpected_status("lyrics search endpoint")),
+        }
+    }
+
+    fn download(&self, candidate: &Candidate, fmt: &str) -> ProviderResult<Vec<u8>> {
+        let response = Http::get(DOWNLOAD_URL)
+            .browser()
+            .param("ver", "1")
+            .param("client", "pc")
+            .param("id", &candidate.id)
+            .param("accesskey", &candidate.accesskey)
+            .param("fmt", fmt)
+            .param("charset", "utf8")
+            .send()?;
+
+        if response.status != 200 {
+            return Err(response.unexpected_status("download endpoint"));
+        }
+
+        let encoded: DownloadResponse = response.json("the download")?;
+
+        STANDARD
+            .decode(&encoded.content)
+            .map_err(|e| ProviderError::other(format!("failed to decode lyrics content: {e}")))
+    }
 }
 
-impl LyricsProvider for Kugou {
+impl LyricsProvider for KuGou {
     fn supported_kinds(&self) -> &'static [LyricsKind] {
         &[LyricsKind::Lrc, LyricsKind::Elrc]
     }
@@ -78,15 +143,21 @@ impl LyricsProvider for Kugou {
         track: &TrackInfo,
         cfg: &PluginConfig,
     ) -> ProviderResult<Option<Lyrics>> {
-        let keyword = format!("{} {}", track.title, track.first_artist().unwrap());
-        let target_ms = track.duration().as_millis() as u64;
+        if !track.has_artist() {
+            return Err(ProviderError::other("track has no artist"));
+        }
 
-        let song = match find_song(
-            &keyword,
-            target_ms,
-            cfg.duration_tolerance.as_millis() as u64,
-        )? {
-            Some(s) => s,
+        let song = match self
+            .search_song(&track)?
+            .data
+            .info
+            .into_iter()
+            .find(|record| {
+                record.duration.is_some_and(|d| {
+                    track.matches_duration(Duration::from_secs(d), cfg.duration_tolerance)
+                })
+            }) {
+            Some(song) => song,
             None => return Ok(None),
         };
 
@@ -99,15 +170,15 @@ impl LyricsProvider for Kugou {
             return Ok(Some(Lyrics::Instrumental));
         }
 
-        let candidate = match find_candidate(&song.hash, song.duration)? {
-            Some(c) => c,
+        let candidate = match self.search_lyrics(&song)?.candidates.into_iter().next() {
+            Some(lyrics) => lyrics,
             None => return Ok(None),
         };
 
         for &kind in &cfg.lyrics_type_priority {
             match kind {
                 LyricsKind::Elrc if candidate.krctype != 0 => {
-                    let bytes = download_raw(&candidate.id, &candidate.accesskey, "krc")?;
+                    let bytes = self.download(&candidate, "krc")?;
                     match krc::to_enhanced_lrc(&bytes) {
                         Ok(elrc) if !elrc.trim().is_empty() => {
                             return Ok(Some(Lyrics::Elrc(elrc)));
@@ -116,88 +187,26 @@ impl LyricsProvider for Kugou {
                         Err(e) => warn!("kugou: failed to decode krc lyrics: {e}"),
                     }
                 }
+
                 LyricsKind::Lrc => {
-                    let bytes = download_raw(&candidate.id, &candidate.accesskey, "lrc")?;
+                    let bytes = self.download(&candidate, "lrc")?;
                     let lrc = String::from_utf8(bytes).map_err(|e| {
                         ProviderError::other(format!("lyrics content is not valid UTF-8: {e}"))
                     })?;
 
                     if lrc::is_instrumental(&lrc) {
-                        info!("kugou: track is instrumental");
+                        warn!("kugou: track was not marked as instrumental and is instrumental");
                         return Ok(Some(Lyrics::Instrumental));
                     }
                     if !lrc.trim().is_empty() {
                         return Ok(Some(Lyrics::Lrc(lrc)));
                     }
                 }
+
                 _ => {}
             }
         }
 
         Ok(None)
-    }
-}
-
-fn find_song(keyword: &str, target_ms: u64, tolerance_ms: u64) -> ProviderResult<Option<SongInfo>> {
-    let parsed: SongSearchResponse = get_json(
-        Http::get(SONG_SEARCH_URL)
-            .param("format", "json")
-            .param("keyword", keyword)
-            .param("page", "1")
-            .param("pagesize", "10")
-            .param("showtype", "1"),
-        "the song search",
-    )?;
-
-    Ok(parsed.data.info.into_iter().find(|s| {
-        s.duration
-            .map(|secs| (secs * 1000).abs_diff(target_ms) <= tolerance_ms)
-            .unwrap_or(false)
-    }))
-}
-
-fn find_candidate(hash: &str, duration: Option<u64>) -> ProviderResult<Option<Candidate>> {
-    let parsed: LyricsSearchResponse = get_json(
-        Http::get(LYRICS_SEARCH_URL)
-            .param("ver", "1")
-            .param("man", "yes")
-            .param("client", "mobi")
-            .param("keyword", "")
-            .param("duration", duration.unwrap_or(0).to_string())
-            .param("hash", hash)
-            .param("album_audio_id", ""),
-        "the lyrics search",
-    )?;
-
-    if parsed.status != 200 {
-        return Ok(None);
-    }
-
-    Ok(parsed.candidates.into_iter().next())
-}
-
-fn download_raw(id: &str, accesskey: &str, fmt: &str) -> ProviderResult<Vec<u8>> {
-    let parsed: DownloadResponse = get_json(
-        Http::get(DOWNLOAD_URL)
-            .param("ver", "1")
-            .param("client", "pc")
-            .param("id", id)
-            .param("accesskey", accesskey)
-            .param("fmt", fmt)
-            .param("charset", "utf8"),
-        "the download",
-    )?;
-
-    STANDARD
-        .decode(&parsed.content)
-        .map_err(|e| ProviderError::other(format!("failed to decode lyrics content: {e}")))
-}
-
-fn get_json<T: serde::de::DeserializeOwned>(request: Http, what: &str) -> ProviderResult<T> {
-    let response = request.browser().send()?;
-
-    match response.status {
-        200 => response.json(what),
-        _ => Err(response.unexpected_status(what)),
     }
 }

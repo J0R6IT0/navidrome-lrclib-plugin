@@ -2,7 +2,7 @@ use crate::{
     config::PluginConfig,
     providers::{
         error::ProviderResult,
-        services::{AppleMusic, Kugou, Lrclib, Lrcmux, LyricsOvh, NetEase, QQMusic, Stixoi},
+        services::{AppleMusic, KuGou, Lrclib, Lrcmux, LyricsOvh, NetEase, QQMusic, Stixoi},
     },
     types::{Lyrics, LyricsKind},
 };
@@ -28,7 +28,7 @@ pub fn register_providers(registry: &mut ProviderRegistry) {
     registry.register("lrclib", Lrclib::create);
     registry.register("lyrics.ovh", LyricsOvh::create);
     registry.register("lrcmux", Lrcmux::create);
-    registry.register("kugou", Kugou::create);
+    registry.register("kugou", KuGou::create);
     registry.register("netease", NetEase::create);
     registry.register("qqmusic", QQMusic::create);
     registry.register("applemusic", AppleMusic::create);
