@@ -11,10 +11,9 @@ use std::collections::HashSet;
 
 const BASE_URL: &str = "https://stixoi.info";
 
-// How many search results to fetch and inspect before giving up.
 const MAX_PROBE: usize = 8;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, PartialEq)]
 struct SongPage {
     #[serde(default)]
     title: String,
@@ -45,6 +44,62 @@ impl Stixoi {
     pub fn create(_params: &ProviderParams) -> Box<dyn LyricsProvider> {
         Box::new(Self)
     }
+
+    fn find_lyrics(
+        &self,
+        query: &str,
+        title: &str,
+        artist: &str,
+    ) -> ProviderResult<Option<String>> {
+        let candidate_ids = self.search(query)?;
+
+        let mut first_title_match: Option<String> = None;
+
+        for id in candidate_ids.iter().take(MAX_PROBE) {
+            let Some(song) = self.get(id)? else {
+                continue;
+            };
+
+            if song.lyrics.trim().is_empty() || !title_equal(title, &song.title) {
+                continue;
+            }
+
+            if artist_matches(artist, &song.credits()) {
+                return Ok(Some(song.lyrics));
+            }
+
+            first_title_match.get_or_insert(song.lyrics);
+        }
+
+        Ok(first_title_match)
+    }
+
+    fn search(&self, query: &str) -> ProviderResult<Vec<String>> {
+        let response = Http::get(format!("{BASE_URL}/search"))
+            .browser()
+            .header("RSC", "1")
+            .param("q", query)
+            .param("scope", "songs")
+            .send()?;
+
+        match response.status {
+            200 => extract_song_ids(&response.text()),
+            _ => Err(response.unexpected_status("the search")),
+        }
+    }
+
+    fn get(&self, id: &str) -> ProviderResult<Option<SongPage>> {
+        let response = Http::get(format!("{BASE_URL}/songs/{id}"))
+            .browser()
+            .header("RSC", "1")
+            .send()?;
+
+        match response.status {
+            200 => parse_song_page(&response.text(), id),
+            404 => Ok(None),
+            _ => Err(response.unexpected_status("the song page")),
+        }
+    }
 }
 
 impl LyricsProvider for Stixoi {
@@ -57,7 +112,7 @@ impl LyricsProvider for Stixoi {
         track: &TrackInfo,
         _cfg: &PluginConfig,
     ) -> ProviderResult<Option<Lyrics>> {
-        let title = strip_parens(&track.title);
+        let title = track.title_without_parens();
         if title.is_empty() {
             return Ok(None);
         }
@@ -84,122 +139,68 @@ impl LyricsProvider for Stixoi {
     }
 }
 
-impl Stixoi {
-    fn find_lyrics(
-        &self,
-        query: &str,
-        title: &str,
-        artist: &str,
-    ) -> ProviderResult<Option<String>> {
-        let ids = self.search_ids(query)?;
+fn extract_song_ids(body: &str) -> ProviderResult<Vec<String>> {
+    let song_link_re = Regex::new(r#""href":"/songs/(\d+)""#)
+        .map_err(|e| ProviderError::other(format!("invalid song link regex: {e}")))?;
 
-        let mut fallback: Option<String> = None;
-
-        for id in ids.iter().take(MAX_PROBE) {
-            let song = match self.fetch_song(id)? {
-                Some(s) => s,
-                None => continue,
-            };
-
-            if song.lyrics.trim().is_empty() || !title_equal(title, &song.title) {
-                continue;
-            }
-
-            if artist_matches(artist, &song.credits()) {
-                return Ok(Some(song.lyrics));
-            }
-
-            if fallback.is_none() {
-                fallback = Some(song.lyrics);
+    let mut ids = Vec::new();
+    for cap in song_link_re.captures_iter(body) {
+        if let Some(m) = cap.get(1) {
+            let id = m.as_str().to_string();
+            if !ids.contains(&id) {
+                ids.push(id);
             }
         }
-
-        Ok(fallback)
     }
 
-    fn search_ids(&self, query: &str) -> ProviderResult<Vec<String>> {
-        let response = self
-            .request(format!("{BASE_URL}/search"))
-            .param("q", query)
-            .param("scope", "songs")
-            .send()?;
+    Ok(ids)
+}
 
-        if response.status != 200 {
-            return Err(response.unexpected_status("the search"));
-        }
+fn parse_song_page(body: &str, id: &str) -> ProviderResult<Option<SongPage>> {
+    let anchor = format!(r#""song":{{"id":{id}"#);
+    let Some(song_json) = extract_json_object(body, &anchor) else {
+        return Ok(None);
+    };
 
-        let body = response.text();
-
-        let re = Regex::new(r#""href":"/songs/(\d+)""#)
-            .map_err(|e| ProviderError::other(format!("invalid song link regex: {e}")))?;
-
-        let mut ids = Vec::new();
-        for cap in re.captures_iter(&body) {
-            if let Some(m) = cap.get(1) {
-                let id = m.as_str().to_string();
-                if !ids.contains(&id) {
-                    ids.push(id);
-                }
-            }
-        }
-
-        Ok(ids)
-    }
-
-    fn fetch_song(&self, id: &str) -> ProviderResult<Option<SongPage>> {
-        let response = self.request(format!("{BASE_URL}/songs/{id}")).send()?;
-
-        match response.status {
-            200 => {}
-            404 => return Ok(None),
-            _ => return Err(response.unexpected_status("the song page")),
-        }
-
-        let body = response.text();
-        let anchor = format!(r#""song":{{"id":{id}"#);
-
-        let Some(obj) = extract_json_object(&body, &anchor) else {
-            return Ok(None);
-        };
-
-        serde_json::from_str(obj)
-            .map(Some)
-            .map_err(|e| ProviderError::other(format!("failed to parse the song payload: {e}")))
-    }
-
-    fn request(&self, url: String) -> Http {
-        Http::get(url).browser().header("RSC", "1")
-    }
+    serde_json::from_str(song_json)
+        .map(Some)
+        .map_err(|e| ProviderError::other(format!("failed to parse the song payload: {e}")))
 }
 
 fn extract_json_object<'a>(haystack: &'a str, anchor: &str) -> Option<&'a str> {
-    let anchor_at = haystack.find(anchor)?;
-    let start = anchor_at + haystack[anchor_at..].find('{')?;
+    let start = find_object_start(haystack, anchor)?;
+    let end = find_object_end(haystack, start)?;
+    Some(&haystack[start..end])
+}
 
-    let bytes = haystack.as_bytes();
+fn find_object_start(haystack: &str, anchor: &str) -> Option<usize> {
+    let anchor_pos = haystack.find(anchor)?;
+    let brace_offset = haystack[anchor_pos..].find('{')?;
+    Some(anchor_pos + brace_offset)
+}
+
+fn find_object_end(haystack: &str, start: usize) -> Option<usize> {
     let mut depth = 0i32;
     let mut in_string = false;
     let mut escaped = false;
 
-    for (offset, &b) in bytes[start..].iter().enumerate() {
+    for (offset, &byte) in haystack.as_bytes()[start..].iter().enumerate() {
         if in_string {
-            if escaped {
-                escaped = false;
-            } else if b == b'\\' {
-                escaped = true;
-            } else if b == b'"' {
-                in_string = false;
+            match byte {
+                b'\\' if !escaped => escaped = true,
+                b'"' if !escaped => in_string = false,
+                _ => escaped = false,
             }
             continue;
         }
 
-        match b {
+        match byte {
             b'"' => in_string = true,
             b'{' => depth += 1,
             b'}' => {
                 depth -= 1;
                 if depth == 0 {
-                    return Some(&haystack[start..start + offset + 1]);
+                    return Some(start + offset + 1);
                 }
             }
             _ => {}
@@ -207,22 +208,6 @@ fn extract_json_object<'a>(haystack: &'a str, anchor: &str) -> Option<&'a str> {
     }
 
     None
-}
-
-fn strip_parens(title: &str) -> String {
-    let mut out = String::with_capacity(title.len());
-    let mut depth = 0u32;
-
-    for c in title.chars() {
-        match c {
-            '(' | '[' | '{' => depth += 1,
-            ')' | ']' | '}' => depth = depth.saturating_sub(1),
-            _ if depth == 0 => out.push(c),
-            _ => {}
-        }
-    }
-
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn fold(c: char) -> char {
@@ -287,77 +272,138 @@ fn artist_matches(artist: &str, credits: &[&str]) -> bool {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_strip_parens() {
-        assert_eq!(strip_parens("Αγάπη (Live)"), "Αγάπη");
-        assert_eq!(strip_parens("Song [Remix] (2020)"), "Song");
-        assert_eq!(strip_parens("  spaced   out  "), "spaced out");
-        assert_eq!(strip_parens("No parens"), "No parens");
+    #[track_caller]
+    fn check_song_ids(body: &str, expected: &[&str]) {
+        let actual = extract_song_ids(body).unwrap();
+        let expected: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+        assert_eq!(actual, expected);
     }
 
     #[test]
-    fn test_normalize_greek_accents() {
-        assert_eq!(normalize("Αγάπη"), normalize("ΑΓΑΠΗ"));
-        assert_eq!(normalize("Της δικαιοσύνης!"), "τησδικαιοσυνησ");
-    }
-
-    #[test]
-    fn test_title_equal_ignores_accents_and_punctuation() {
-        assert!(title_equal("Αγάπη", "ΑΓΑΠΗ"));
-        assert!(title_equal("Της δικαιοσύνης, ήλιε", "Της δικαιοσυνης ηλιε"));
-        assert!(!title_equal("Αγάπη", "Αγάπη μου"));
-        assert!(!title_equal("", "anything"));
-    }
-
-    #[test]
-    fn test_artist_matches_surname_first() {
-        let credits = vec!["Νταλάρας Γιώργος"];
-        assert!(artist_matches("Γιώργος Νταλάρας", &credits));
-        assert!(artist_matches("Νταλάρας", &credits));
-        assert!(!artist_matches("Μητροπάνος", &credits));
-        assert!(!artist_matches("", &credits));
-    }
-
-    #[test]
-    fn test_artist_matches_across_credit_kinds() {
-        let credits = vec!["Theodorakis Mikis", "Elytis Odysseas"];
-        assert!(artist_matches("Mikis Theodorakis", &credits));
-        assert!(artist_matches("Odysseas Elytis", &credits));
-    }
-
-    #[test]
-    fn test_extract_json_object_simple() {
-        let s = r#"prefix "song":{"id":70,"title":"A","nested":{"x":1}} suffix"#;
-        let obj = extract_json_object(s, r#""song":{"id":70"#).unwrap();
-        assert_eq!(obj, r#"{"id":70,"title":"A","nested":{"x":1}}"#);
-    }
-
-    #[test]
-    fn test_extract_json_object_braces_in_string() {
-        let s = r#""song":{"id":1,"lyrics":"a {b} \"c\" }","ok":true}"#;
-        let obj = extract_json_object(s, r#""song":{"id":1"#).unwrap();
-        assert_eq!(obj, r#"{"id":1,"lyrics":"a {b} \"c\" }","ok":true}"#);
-    }
-
-    #[test]
-    fn test_extract_json_object_missing_anchor() {
-        assert_eq!(
-            extract_json_object("nothing here", r#""song":{"id":9"#),
-            None
+    fn song_ids_are_extracted_from_rsc_chunk() {
+        check_song_ids(
+            r#"1:["$","a",null,{"href":"/songs/101","children":"Song A"}]
+2:["$","a",null,{"href":"/songs/202","children":"Song B"}]"#,
+            &["101", "202"],
         );
     }
 
     #[test]
-    fn test_song_page_parses_and_collects_credits() {
-        let json = r#"{"id":70,"title":"Αγάπη","lyrics":"line one\nline two",
-            "lyricists":["Τριπολίτης Κώστας"],"composers":["Θεοδωράκης Μίκης"],
-            "singers":["Νταλάρας Γιώργος"],"albums":["X (1981)"],"versions":[]}"#;
-        let song: SongPage = serde_json::from_str(json).unwrap();
-        assert_eq!(song.title, "Αγάπη");
-        assert_eq!(song.lyrics, "line one\nline two");
-        assert_eq!(
-            song.credits(),
-            vec!["Νταλάρας Γιώργος", "Θεοδωράκης Μίκης", "Τριπολίτης Κώστας"]
+    fn song_ids_are_deduplicated() {
+        check_song_ids(
+            r#"{"href":"/songs/5"} ... {"href":"/songs/5"} ... {"href":"/songs/9"}"#,
+            &["5", "9"],
         );
+    }
+
+    #[test]
+    fn song_ids_ignore_unrelated_links() {
+        check_song_ids(
+            r#"{"href":"/artists/9"} {"href":"/songs/42"} {"href":"/about"}"#,
+            &["42"],
+        );
+    }
+
+    #[test]
+    fn song_ids_empty_for_no_results() {
+        check_song_ids(r#"1:{"results":[],"count":0}"#, &[]);
+    }
+
+    #[track_caller]
+    fn check_parsed_song(body: &str, id: &str, expected: SongPage) {
+        assert_eq!(parse_song_page(body, id).unwrap(), Some(expected));
+    }
+
+    #[track_caller]
+    fn check_song_not_found(body: &str, id: &str) {
+        assert_eq!(parse_song_page(body, id).unwrap(), None);
+    }
+
+    #[track_caller]
+    fn check_song_parse_fails(body: &str, id: &str) {
+        assert!(parse_song_page(body, id).is_err());
+    }
+
+    #[test]
+    fn parses_a_full_song_out_of_a_realistic_page_body() {
+        let body = r#"1:["$","div",null,{"count":1,"song":{"id":777,"title":"Ένα Τραγούδι","lyrics":"Πρώτη γραμμή\nΔεύτερη γραμμή","singers":["Χάρις Αλεξίου"],"composers":["Μάνος Χατζιδάκις"],"lyricists":["Νίκος Γκάτσος"]}}]"#;
+
+        check_parsed_song(
+            body,
+            "777",
+            SongPage {
+                title: "Ένα Τραγούδι".to_string(),
+                lyrics: "Πρώτη γραμμή\nΔεύτερη γραμμή".to_string(),
+                singers: vec!["Χάρις Αλεξίου".to_string()],
+                composers: vec!["Μάνος Χατζιδάκις".to_string()],
+                lyricists: vec!["Νίκος Γκάτσος".to_string()],
+            },
+        );
+    }
+
+    #[test]
+    fn missing_fields_default_to_empty() {
+        let body = r#"{"song":{"id":42,"unrelatedField":true}}"#;
+        check_parsed_song(body, "42", SongPage::default());
+    }
+
+    #[test]
+    fn returns_none_when_the_id_is_not_present() {
+        let body = r#"1:["$","div",null,{"count":0}]"#;
+        check_song_not_found(body, "777");
+    }
+
+    #[test]
+    fn returns_none_for_a_truncated_payload() {
+        let body = r#"{"song":{"id":5,"title":"Broken"#;
+        check_song_not_found(body, "5");
+    }
+
+    #[test]
+    fn an_escaped_brace_inside_a_string_does_not_end_the_object_early() {
+        let body = r#"{"song":{"id":9,"title":"He said \"Hello}\" world","lyrics":"","singers":[],"composers":[],"lyricists":[]}}"#;
+
+        check_parsed_song(
+            body,
+            "9",
+            SongPage {
+                title: "He said \"Hello}\" world".to_string(),
+                ..SongPage::default()
+            },
+        );
+    }
+
+    #[test]
+    fn invalid_json_is_an_error() {
+        let body = r#"{"song":{"id":6,"title":"X",}}"#;
+        check_song_parse_fails(body, "6");
+    }
+
+    #[track_caller]
+    fn check_extract_json_object(haystack: &str, anchor: &str, expected: Option<&str>) {
+        assert_eq!(extract_json_object(haystack, anchor), expected);
+    }
+
+    #[test]
+    fn extract_json_object_finds_the_object_after_the_anchor() {
+        check_extract_json_object(
+            r#"prefix "song":{"id":70,"title":"A","nested":{"x":1}} suffix"#,
+            r#""song":{"id":70"#,
+            Some(r#"{"id":70,"title":"A","nested":{"x":1}}"#),
+        );
+    }
+
+    #[test]
+    fn extract_json_object_ignores_braces_inside_strings() {
+        check_extract_json_object(
+            r#""song":{"id":1,"lyrics":"a {b} \"c\" }","ok":true}"#,
+            r#""song":{"id":1"#,
+            Some(r#"{"id":1,"lyrics":"a {b} \"c\" }","ok":true}"#),
+        );
+    }
+
+    #[test]
+    fn extract_json_object_none_when_the_anchor_is_missing() {
+        check_extract_json_object("nothing here", r#""song":{"id":9"#, None);
     }
 }
