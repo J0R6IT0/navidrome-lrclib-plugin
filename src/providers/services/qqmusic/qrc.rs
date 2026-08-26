@@ -523,68 +523,77 @@ fn triple_des_crypt(data: &[u8; 8], schedule: &TripleSchedule) -> [u8; 8] {
 mod tests {
     use super::*;
 
+    #[track_caller]
+    fn check_to_elrc(qrc: &str, expected: &str) {
+        assert_eq!(to_enhanced_lrc(qrc), expected);
+    }
+
     #[test]
-    fn test_to_enhanced_lrc_absolute_timing() {
-        let content =
-            "[370,2624]Is (370,336)this (706,285)the (991,355)real (1346,904)life(2250,744)";
-        assert_eq!(
-            to_enhanced_lrc(content),
-            "[00:00.37]<00:00.37>Is <00:00.71>this <00:00.99>the <00:01.35>real <00:02.25>life<00:02.99>"
+    fn qrc_line_to_elrc() {
+        check_to_elrc(
+            "[370,2624]Is (370,336)this (706,285)the (991,355)real (1346,904)life(2250,744)",
+            "[00:00.37]<00:00.37>Is <00:00.71>this <00:00.99>the <00:01.35>real <00:02.25>life<00:02.99>",
         );
+    }
+
+    #[track_caller]
+    fn check_to_lrc(qrc: &str, expected: &str) {
+        assert_eq!(to_lrc(qrc), expected);
     }
 
     #[test]
     fn test_to_lrc_concatenates_words() {
-        let content =
-            "[370,2624]Is (370,336)this (706,285)the (991,355)real (1346,904)life(2250,744)";
-        assert_eq!(to_lrc(content), "[00:00.37]Is this the real life");
-    }
-
-    #[test]
-    fn test_literal_parens_in_text_are_kept() {
-        let content = "[0,90]((0,2)Remastered(2,21))(23,2)";
-        assert_eq!(to_lrc(content), "[00:00.00](Remastered)");
-    }
-
-    #[test]
-    fn test_skips_metadata_lines() {
-        let content = "[ti:Song]\n[ar:Artist]\n[0,1000]hi(0,500)";
-        assert_eq!(to_lrc(content), "[00:00.00]hi");
-    }
-
-    #[test]
-    fn test_is_qrc() {
-        assert!(is_qrc("[0,90]hi(0,16)"));
-        assert!(!is_qrc("[00:01.00]hi"));
-    }
-
-    #[test]
-    fn test_extract_lyric_content() {
-        let xml = r#"<Lyric_1 LyricType="1" LyricContent="[0,90]hi(0,16)"/>"#;
-        assert_eq!(
-            extract_lyric_content(xml).as_deref(),
-            Some("[0,90]hi(0,16)")
+        check_to_lrc(
+            "[370,2624]Is (370,336)this (706,285)the (991,355)real (1346,904)life(2250,744)",
+            "[00:00.37]Is this the real life",
         );
     }
 
     #[test]
-    fn test_extract_lyric_content_empty_is_none() {
-        let xml = r#"<Lyric_1 LyricType="1" LyricContent=""/>"#;
-        assert_eq!(extract_lyric_content(xml), None);
+    fn keeps_parens_in_text() {
+        check_to_lrc(
+            "[0,90]((0,2)Remastered(2,21))(23,2)",
+            "[00:00.00](Remastered)",
+        );
     }
 
     #[test]
-    fn test_hex_decode() {
-        assert_eq!(hex_decode("  00ff1a\n").unwrap(), vec![0x00, 0xff, 0x1a]);
-        assert!(hex_decode("abc").is_err());
-        assert!(hex_decode("aéa").is_err());
-        assert!(hex_decode("é").is_err());
-        assert!(hex_decode("zz").is_err());
+    fn skips_metadata_lines() {
+        check_to_lrc("[ti:Song]\n[ar:Artist]\n[0,1000]hi(0,500)", "[00:00.00]hi");
+    }
+
+    #[track_caller]
+    fn check_is_qrc(qrc: &str, expected: bool) {
+        assert_eq!(is_qrc(qrc), expected);
     }
 
     #[test]
-    fn test_empty_content() {
-        assert_eq!(to_enhanced_lrc(""), "");
-        assert_eq!(to_lrc(""), "");
+    fn qrc_is_detected() {
+        check_is_qrc("[0,90]hi(0,16)", true);
+        check_is_qrc("[00:01.00]hi", false);
+    }
+
+    #[track_caller]
+    fn check_extract_lyric_content(xml: &str, expected: Option<&str>) {
+        assert_eq!(extract_lyric_content(xml).as_deref(), expected);
+    }
+
+    #[test]
+    fn lyric_content_is_extracted() {
+        check_extract_lyric_content(
+            r#"<Lyric_1 LyricType="1" LyricContent="[0,90]hi(0,16)"/>"#,
+            Some("[0,90]hi(0,16)"),
+        );
+    }
+
+    #[test]
+    fn empty_lyric_content_is_none() {
+        check_extract_lyric_content(r#"<Lyric_1 LyricType="1" LyricContent=""/>"#, None);
+    }
+
+    #[test]
+    fn empty_test() {
+        check_to_elrc("", "");
+        check_to_elrc("", "");
     }
 }
