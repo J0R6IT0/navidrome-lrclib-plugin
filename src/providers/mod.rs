@@ -1,24 +1,17 @@
 use crate::{
     config::PluginConfig,
     providers::{
-        applemusic::AppleMusic, error::ProviderResult, kugou::Kugou, lrclib::Lrclib,
-        lrcmux::Lrcmux, lyricsovh::LyricsOvh, netease::NetEase, qqmusic::QQMusic, stixoi::Stixoi,
+        error::ProviderResult,
+        services::{AppleMusic, Kugou, Lrclib, Lrcmux, LyricsOvh, NetEase, QQMusic, Stixoi},
     },
     types::{Lyrics, LyricsKind},
 };
 use nd_pdk::lyrics::TrackInfo;
 
-mod applemusic;
 pub mod error;
 mod http;
-mod kugou;
-mod lrclib;
-mod lrcmux;
-mod lyricsovh;
-mod netease;
-mod qqmusic;
 mod registry;
-mod stixoi;
+mod services;
 
 pub use registry::ProviderRegistry;
 
