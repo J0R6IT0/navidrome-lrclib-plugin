@@ -74,11 +74,11 @@ impl NetEase {
 
         let response = Http::get(SEARCH_URL)
             .browser()
+            .header("Referer", "https://music.163.com")
             .param("s", query)
             .param("type", "1")
             .param("limit", "5")
             .param("offset", "0")
-            .header("Referer", "https://music.163.com")
             .send()?;
 
         match response.status {
