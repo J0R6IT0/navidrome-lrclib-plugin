@@ -23,6 +23,7 @@ struct JsonResponse {
 
 #[derive(Deserialize)]
 struct JsonTrack {
+    #[serde(default)]
     duration: f32,
 }
 
