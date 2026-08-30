@@ -7,16 +7,23 @@ use crate::{
 };
 use nd_pdk::lyrics::TrackInfo;
 use serde::Deserialize;
+use std::time::Duration;
 
 const DEFAULT_BASE_URL: &str = "https://api.lrcmux.dev";
 
-const KNOWN_SOURCES: &[&str] = &["genius", "kugou", "musixmatch", "netease", "ytmusic"];
+const KNOWN_SOURCES: &[&str] = &["genius", "kugou", "lrclib", "musixmatch", "ytmusic"];
 
 #[derive(Deserialize)]
 struct JsonResponse {
+    track: JsonTrack,
     meta: JsonMeta,
     #[serde(default)]
     lines: Vec<Line>,
+}
+
+#[derive(Deserialize)]
+struct JsonTrack {
+    duration: f32,
 }
 
 #[derive(Deserialize)]
@@ -109,9 +116,23 @@ impl LyricsProvider for Lrcmux {
             return Err(ProviderError::other("track has no artist"));
         }
 
-        Ok(self
-            .get(track)?
-            .and_then(|response| pick_lyrics(response, &cfg.lyrics_type_priority)))
+        let Some(response) = self.get(track)? else {
+            return Ok(None);
+        };
+
+        if !track.matches_duration(
+            Duration::from_secs_f32(response.track.duration),
+            cfg.duration_tolerance,
+        ) {
+            return Err(ProviderError::other(format!(
+                "duration mismatch: expected {}s ±{}s, got {}s",
+                track.duration().as_secs(),
+                cfg.duration_tolerance.as_secs(),
+                response.track.duration
+            )));
+        }
+
+        Ok(pick_lyrics(response, &cfg.lyrics_type_priority))
     }
 }
 
@@ -211,6 +232,7 @@ mod tests {
 
     fn response(level: SyncLevel, instrumental: bool, lines: Vec<Line>) -> JsonResponse {
         JsonResponse {
+            track: JsonTrack { duration: 180.0 },
             meta: JsonMeta {
                 level,
                 instrumental,
@@ -296,11 +318,11 @@ mod tests {
         assert_eq!(restrict_sources(Some("")), None);
         assert_eq!(restrict_sources(Some(" , ")), None);
         assert_eq!(
-            restrict_sources(Some("genius,kugou,musixmatch,netease,ytmusic")),
+            restrict_sources(Some("genius,kugou,lrclib,musixmatch,ytmusic")),
             None
         );
         assert_eq!(
-            restrict_sources(Some("ytmusic,netease,musixmatch,kugou,genius,future")),
+            restrict_sources(Some("ytmusic,lrclib,musixmatch,kugou,genius,future")),
             None
         );
     }
@@ -308,8 +330,8 @@ mod tests {
     #[test]
     fn sources_restrict_when_a_source_is_deselected() {
         assert_eq!(
-            restrict_sources(Some("genius,kugou,musixmatch,netease")),
-            Some("genius,kugou,musixmatch,netease".to_string())
+            restrict_sources(Some("genius,kugou,lrclib,musixmatch")),
+            Some("genius,kugou,lrclib,musixmatch".to_string())
         );
         assert_eq!(
             restrict_sources(Some(" musixmatch , kugou ")),

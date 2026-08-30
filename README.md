@@ -45,7 +45,7 @@ Some of the providers don't host lyrics themselves, they pull them from other we
 | ----------- | --------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------- |
 | LRCLIB      |                                                                       | plain,lrc,lyricsfile | Supports custom instances                                            |
 | lyrics.ovh  | Genius, AZLyrics, Paroles.net, LyricsMania, Letras.mus.br, Lyrics.com | plain                | Supports custom instances                                            |
-| lrcmux      | Genius, KuGou, Musixmatch, NetEase, YouTube Music                     | plain,lrc,elrc       | Supports custom instances                                            |
+| lrcmux      | Genius, KuGou, Musixmatch, LRCLIB, YouTube Music                      | plain,lrc,elrc       | Supports custom instances                                            |
 | KuGou       |                                                                       | lrc,elrc             |                                                                      |
 | NetEase     |                                                                       | lrc,elrc             |                                                                      |
 | QQ Music    |                                                                       | lrc,elrc             |                                                                      |

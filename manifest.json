@@ -90,8 +90,8 @@
                 "default": [
                   "genius",
                   "kugou",
+                  "lrclib",
                   "musixmatch",
-                  "netease",
                   "ytmusic"
                 ],
                 "items": {
@@ -99,8 +99,8 @@
                   "oneOf": [
                     { "const": "genius", "title": "Genius" },
                     { "const": "kugou", "title": "KuGou" },
+                    { "const": "lrclib", "title": "LRCLIB" },
                     { "const": "musixmatch", "title": "Musixmatch" },
-                    { "const": "netease", "title": "NetEase" },
                     { "const": "ytmusic", "title": "YouTube Music" }
                   ]
                 }
