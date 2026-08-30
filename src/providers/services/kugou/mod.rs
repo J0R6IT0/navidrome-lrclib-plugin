@@ -15,7 +15,7 @@ use serde::Deserialize;
 mod krc;
 
 const SONG_SEARCH_URL: &str = "http://mobilecdn.kugou.com/api/v3/search/song";
-const LYRICS_SEARCH_URL: &str = "http://lyrics.kugou.com/search";
+const LYRICS_SEARCH_URL: &str = "https://lyrics.kugou.com/search";
 const DOWNLOAD_URL: &str = "https://lyrics.kugou.com/download";
 
 #[derive(Debug, Deserialize)]
@@ -88,6 +88,7 @@ impl KuGou {
 
         match response.status {
             200 => response.json("the song search"),
+            429 => Err(response.rate_limited()),
             _ => Err(response.unexpected_status("song search endpoint")),
         }
     }
@@ -106,6 +107,7 @@ impl KuGou {
 
         match response.status {
             200 => response.json("the lyrics search"),
+            429 => Err(response.rate_limited()),
             _ => Err(response.unexpected_status("lyrics search endpoint")),
         }
     }
@@ -121,8 +123,10 @@ impl KuGou {
             .param("charset", "utf8")
             .send()?;
 
-        if response.status != 200 {
-            return Err(response.unexpected_status("download endpoint"));
+        match response.status {
+            200 => {}
+            429 => return Err(response.rate_limited()),
+            _ => return Err(response.unexpected_status("download endpoint")),
         }
 
         let encoded: DownloadResponse = response.json("the download")?;

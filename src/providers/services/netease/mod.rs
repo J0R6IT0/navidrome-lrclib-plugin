@@ -77,12 +77,13 @@ impl NetEase {
             .header("Referer", "https://music.163.com")
             .param("s", query)
             .param("type", "1")
-            .param("limit", "5")
+            .param("limit", "20")
             .param("offset", "0")
             .send()?;
 
         match response.status {
             200 => response.json("search"),
+            429 => Err(response.rate_limited()),
             _ => Err(response.unexpected_status("the search endpoint")),
         }
     }
@@ -100,6 +101,7 @@ impl NetEase {
 
         match response.status {
             200 => response.json("the lyrics"),
+            429 => Err(response.rate_limited()),
             _ => Err(response.unexpected_status("the lyrics endpoint")),
         }
     }

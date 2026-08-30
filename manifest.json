@@ -313,7 +313,7 @@
 
         "writeLyrics": {
           "type": "boolean",
-          "title": "Write lyrics to files",
+          "title": "Write lyrics to sidecar files",
           "default": false
         },
 

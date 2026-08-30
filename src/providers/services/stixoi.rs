@@ -53,8 +53,6 @@ impl Stixoi {
     ) -> ProviderResult<Option<String>> {
         let candidate_ids = self.search(query)?;
 
-        let mut first_title_match: Option<String> = None;
-
         for id in candidate_ids.iter().take(MAX_PROBE) {
             let Some(song) = self.get(id)? else {
                 continue;
@@ -67,11 +65,9 @@ impl Stixoi {
             if artist_matches(artist, &song.credits()) {
                 return Ok(Some(song.lyrics));
             }
-
-            first_title_match.get_or_insert(song.lyrics);
         }
 
-        Ok(first_title_match)
+        Ok(None)
     }
 
     fn search(&self, query: &str) -> ProviderResult<Vec<String>> {
@@ -84,6 +80,7 @@ impl Stixoi {
 
         match response.status {
             200 => extract_song_ids(&response.text()),
+            429 => Err(response.rate_limited()),
             _ => Err(response.unexpected_status("the search")),
         }
     }
@@ -97,6 +94,7 @@ impl Stixoi {
         match response.status {
             200 => parse_song_page(&response.text(), id),
             404 => Ok(None),
+            429 => Err(response.rate_limited()),
             _ => Err(response.unexpected_status("the song page")),
         }
     }
@@ -162,9 +160,14 @@ fn parse_song_page(body: &str, id: &str) -> ProviderResult<Option<SongPage>> {
         return Ok(None);
     };
 
-    serde_json::from_str(song_json)
-        .map(Some)
-        .map_err(|e| ProviderError::other(format!("failed to parse the song payload: {e}")))
+    let mut song: SongPage = serde_json::from_str(song_json)
+        .map_err(|e| ProviderError::other(format!("failed to parse the song payload: {e}")))?;
+
+    if let Some(resolved) = resolve_rsc_reference(body, &song.lyrics) {
+        song.lyrics = resolved;
+    }
+
+    Ok(Some(song))
 }
 
 fn extract_json_object<'a>(haystack: &'a str, anchor: &str) -> Option<&'a str> {
@@ -210,6 +213,37 @@ fn find_object_end(haystack: &str, start: usize) -> Option<usize> {
     None
 }
 
+fn resolve_rsc_reference(body: &str, value: &str) -> Option<String> {
+    let chunk_id = value.strip_prefix('$')?;
+    if chunk_id.is_empty() || !chunk_id.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+
+    let marker = format!("{chunk_id}:T");
+    let marker_pos = find_line_start(body, &marker)?;
+    let after_marker = &body[marker_pos + marker.len()..];
+    let comma = after_marker.find(',')?;
+    let hexlen = usize::from_str_radix(&after_marker[..comma], 16).ok()?;
+
+    let text_start = marker_pos + marker.len() + comma + 1;
+    let text_bytes = body.as_bytes().get(text_start..)?;
+    let chunk = text_bytes.get(..hexlen)?;
+    String::from_utf8(chunk.to_vec()).ok()
+}
+
+/// Finds `marker` only where it starts a line, to avoid matching
+/// unrelated content.
+fn find_line_start(haystack: &str, marker: &str) -> Option<usize> {
+    let mut search_from = 0;
+    loop {
+        let idx = haystack[search_from..].find(marker)? + search_from;
+        if idx == 0 || haystack.as_bytes()[idx - 1] == b'\n' {
+            return Some(idx);
+        }
+        search_from = idx + 1;
+    }
+}
+
 fn fold(c: char) -> char {
     match c {
         'ά' => 'α',
@@ -247,8 +281,22 @@ fn tokens(s: &str) -> Vec<String> {
         .map(|c| if c.is_alphanumeric() { c } else { ' ' })
         .collect::<String>()
         .split_whitespace()
-        .map(str::to_string)
+        .map(collapse_doubles)
         .collect()
+}
+
+fn collapse_doubles(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut last = None;
+
+    for c in s.chars() {
+        if Some(c) != last {
+            out.push(c);
+        }
+        last = Some(c);
+    }
+
+    out
 }
 
 fn title_equal(a: &str, b: &str) -> bool {
@@ -271,6 +319,30 @@ fn artist_matches(artist: &str, credits: &[&str]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[track_caller]
+    fn check_artist_matches(artist: &str, credits: &[&str], expected: bool) {
+        assert_eq!(
+            artist_matches(artist, credits),
+            expected,
+            "{artist:?} against {credits:?}"
+        );
+    }
+
+    #[test]
+    fn an_artist_matches_regardless_of_word_order() {
+        check_artist_matches("Δήμητρα Γαλάνη", &["Γαλάνη Δήμητρα"], true);
+    }
+
+    #[test]
+    fn a_doubled_consonant_spelling_variant_still_matches() {
+        check_artist_matches("Νατάσσα Μποφίλιου", &["Μποφίλιου Νατάσα"], true);
+    }
+
+    #[test]
+    fn an_unrelated_artist_does_not_match() {
+        check_artist_matches("Νατάσσα Μποφίλιου", &["Ρουβάς Σάκης"], false);
+    }
 
     #[track_caller]
     fn check_song_ids(body: &str, expected: &[&str]) {
@@ -377,6 +449,58 @@ mod tests {
     fn invalid_json_is_an_error() {
         let body = r#"{"song":{"id":6,"title":"X",}}"#;
         check_song_parse_fails(body, "6");
+    }
+
+    #[test]
+    fn lyrics_streamed_as_an_rsc_chunk_are_resolved() {
+        let body = concat!(
+            r#"1:["$","div",null,{"song":{"id":777,"title":"Title","lyrics":"$50","singers":[],"composers":[],"lyricists":[]}}]"#,
+            "\n50:Td,Line 1\nLine 2\n",
+        );
+
+        check_parsed_song(
+            body,
+            "777",
+            SongPage {
+                title: "Title".to_string(),
+                lyrics: "Line 1\nLine 2".to_string(),
+                ..SongPage::default()
+            },
+        );
+    }
+
+    #[track_caller]
+    fn check_resolve_rsc_reference(body: &str, value: &str, expected: Option<&str>) {
+        assert_eq!(resolve_rsc_reference(body, value).as_deref(), expected);
+    }
+
+    #[test]
+    fn an_rsc_reference_is_resolved_from_its_chunk() {
+        check_resolve_rsc_reference(
+            "50:Td,Line 1\nLine 2\ntrailer",
+            "$50",
+            Some("Line 1\nLine 2"),
+        );
+    }
+
+    #[test]
+    fn an_rsc_reference_chunk_id_can_be_hex() {
+        check_resolve_rsc_reference("4f:T5,hello\ntrailer", "$4f", Some("hello"));
+    }
+
+    #[test]
+    fn a_chunk_marker_is_only_matched_at_the_start_of_a_line() {
+        check_resolve_rsc_reference("x50:Td,not this one\n", "$50", None);
+    }
+
+    #[test]
+    fn a_plain_lyrics_value_is_not_treated_as_a_reference() {
+        check_resolve_rsc_reference("50:Td,Line 1\nLine 2\n", "Πρώτη γραμμή", None);
+    }
+
+    #[test]
+    fn a_missing_chunk_resolves_to_nothing() {
+        check_resolve_rsc_reference("no chunks here", "$50", None);
     }
 
     #[track_caller]

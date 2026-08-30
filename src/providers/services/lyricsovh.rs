@@ -42,6 +42,7 @@ impl LyricsOvh {
 
         match response.status {
             200 => response.json("get").map(Some),
+            429 => Err(response.rate_limited()),
             404 => Ok(None),
             _ => Err(response.unexpected_status("lyrics.ovh")),
         }

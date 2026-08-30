@@ -83,8 +83,9 @@ impl<'a> SearchParam<'a> {
     }
 }
 
-/// The lyric endpoint identifies the track by numeric song id, and cross-checks
-/// it against the base64-encoded title/artist/album and the duration in seconds.
+/// The lyric endpoint identifies tracks by numeric song ID. The
+/// base64-encoded title, artist, album, and duration mirror the values sent by
+/// the official client, but the server does not appear to validate them.
 #[derive(Debug, Serialize)]
 struct LyricParam {
     #[serde(rename = "albumName")]
