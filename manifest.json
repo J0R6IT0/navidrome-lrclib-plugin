@@ -115,16 +115,12 @@
                 "title": "Storefront",
                 "description": "Optional. Storefront code (e.g. us, gb, es). Auto-detected from the account when left empty. Only include it if the auto-detection is not working correctly."
               },
-              "includeTranslations": {
-                "type": "boolean",
-                "title": "Include translations (availability varies by song)",
-                "default": false
-              },
               "translationLanguage": {
                 "type": "string",
-                "title": "Translation language",
-                "default": "en-US",
+                "title": "Include translation (availability varies by song)",
+                "default": "none",
                 "oneOf": [
+                  { "const": "none", "title": "Off" },
                   { "const": "ar", "title": "Arabic" },
                   { "const": "ca", "title": "Catalan" },
                   { "const": "zh-Hans-CN", "title": "Chinese (Simplified)" },
@@ -172,12 +168,11 @@
                   { "const": "tr", "title": "Turkish" },
                   { "const": "uk", "title": "Ukrainian" },
                   { "const": "vi", "title": "Vietnamese" }
-                ],
-                "description": "Language the translation should be in. Only used when translations are included."
+                ]
               },
               "romanizationScript": {
                 "type": "string",
-                "title": "Include romanization / transliteration (availability varies by song)",
+                "title": "Include transliteration (availability varies by song)",
                 "default": "none",
                 "oneOf": [
                   { "const": "none", "title": "Off" },
@@ -187,7 +182,11 @@
                 ]
               }
             },
-            "required": ["provider"],
+            "required": [
+              "provider",
+              "romanizationScript",
+              "translationLanguage"
+            ],
             "allOf": [
               {
                 "if": {
@@ -526,44 +525,37 @@
                         }
                       }
                     },
+
                     {
-                      "type": "Control",
-                      "scope": "#/properties/romanizationScript",
-                      "rule": {
-                        "effect": "SHOW",
-                        "condition": {
-                          "scope": "#/properties/provider",
-                          "schema": {
-                            "const": "applemusic"
+                      "type": "HorizontalLayout",
+                      "elements": [
+                        {
+                          "type": "Control",
+                          "scope": "#/properties/romanizationScript",
+                          "rule": {
+                            "effect": "SHOW",
+                            "condition": {
+                              "scope": "#/properties/provider",
+                              "schema": {
+                                "const": "applemusic"
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "type": "Control",
+                          "scope": "#/properties/translationLanguage",
+                          "rule": {
+                            "effect": "SHOW",
+                            "condition": {
+                              "scope": "#/properties/provider",
+                              "schema": {
+                                "const": "applemusic"
+                              }
+                            }
                           }
                         }
-                      }
-                    },
-                    {
-                      "type": "Control",
-                      "scope": "#/properties/includeTranslations",
-                      "rule": {
-                        "effect": "SHOW",
-                        "condition": {
-                          "scope": "#/properties/provider",
-                          "schema": {
-                            "const": "applemusic"
-                          }
-                        }
-                      }
-                    },
-                    {
-                      "type": "Control",
-                      "scope": "#/properties/translationLanguage",
-                      "rule": {
-                        "effect": "SHOW",
-                        "condition": {
-                          "scope": "#/properties/includeTranslations",
-                          "schema": {
-                            "const": true
-                          }
-                        }
-                      }
+                      ]
                     }
                   ]
                 }

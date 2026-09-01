@@ -113,7 +113,6 @@ struct LyricsAttributes {
 pub struct AppleMusic {
     media_user_token: Option<String>,
     storefront: Option<String>,
-    include_translations: bool,
     translation_language: Option<String>,
     romanization_script: Option<String>,
 }
@@ -123,8 +122,10 @@ impl AppleMusic {
         Box::new(Self {
             media_user_token: params.get("mediaUserToken").map(str::to_string),
             storefront: params.get("storefront").map(str::to_string),
-            include_translations: params.get("includeTranslations") == Some("true"),
-            translation_language: params.get("translationLanguage").map(str::to_string),
+            translation_language: params
+                .get("translationLanguage")
+                .filter(|s| *s != "none")
+                .map(str::to_string),
             romanization_script: params
                 .get("romanizationScript")
                 .filter(|s| *s != "none")
@@ -248,11 +249,8 @@ impl LyricsProvider for AppleMusic {
         if let Some(storefront) = &self.storefront {
             params.push(("storefront", storefront.clone()));
         }
-        if self.include_translations {
-            params.push((
-                "translationLanguage",
-                self.translation_language.clone().unwrap_or_default(),
-            ));
+        if let Some(lang) = &self.translation_language {
+            params.push(("translationLanguage", lang.clone()));
         }
         if let Some(script) = &self.romanization_script {
             params.push(("romanizationScript", script.clone()));
@@ -306,10 +304,7 @@ impl LyricsProvider for AppleMusic {
                 return Ok(None);
             };
 
-            let translation_language = self
-                .include_translations
-                .then_some(self.translation_language.as_deref())
-                .flatten();
+            let translation_language = self.translation_language.as_deref();
             let script = self.romanization_script.as_deref();
 
             self.get_lyrics(
