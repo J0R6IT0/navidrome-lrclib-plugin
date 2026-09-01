@@ -175,10 +175,16 @@
                 ],
                 "description": "Language the translation should be in. Only used when translations are included."
               },
-              "includeRomanization": {
-                "type": "boolean",
-                "title": "Include romanization (availability varies by song)",
-                "default": false
+              "romanizationScript": {
+                "type": "string",
+                "title": "Include romanization / transliteration (availability varies by song)",
+                "default": "none",
+                "oneOf": [
+                  { "const": "none", "title": "Off" },
+                  { "const": "und-Latn", "title": "Latin" },
+                  { "const": "und-Hang", "title": "Hangul" },
+                  { "const": "und-Kana", "title": "Katakana" }
+                ]
               }
             },
             "required": ["provider"],
@@ -522,7 +528,7 @@
                     },
                     {
                       "type": "Control",
-                      "scope": "#/properties/includeRomanization",
+                      "scope": "#/properties/romanizationScript",
                       "rule": {
                         "effect": "SHOW",
                         "condition": {
