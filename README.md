@@ -50,7 +50,8 @@ Some of the providers don't host lyrics themselves, they pull them from other we
 | NetEase     |                                                                       | lrc,elrc             |                                                                      |
 | QQ Music    |                                                                       | lrc,elrc             |                                                                      |
 | Apple Music |                                                                       | ttml                 | Supports translations and romanization. Requires active subscription |
-| stixoi.info |                                                                       | plain                | Greek lyrics archive                                                 |
+| stixoi.info |                                                                       | plain                | Greek lyrics                                                         |
+| Genie Music |                                                                       | lrc                  | Korean lyrics                                                        |
 
 ## Provider modes
 

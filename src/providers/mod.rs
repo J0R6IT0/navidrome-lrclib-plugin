@@ -2,7 +2,7 @@ use crate::{
     config::PluginConfig,
     providers::{
         error::ProviderResult,
-        services::{AppleMusic, KuGou, Lrclib, Lrcmux, LyricsOvh, NetEase, QQMusic, Stixoi},
+        services::{AppleMusic, Genie, KuGou, Lrclib, Lrcmux, LyricsOvh, NetEase, QQMusic, Stixoi},
     },
     types::{Lyrics, LyricsKind},
 };
@@ -33,6 +33,7 @@ pub fn register_providers(registry: &mut ProviderRegistry) {
     registry.register("qqmusic", QQMusic::create);
     registry.register("applemusic", AppleMusic::create);
     registry.register("stixoi", Stixoi::create);
+    registry.register("genie", Genie::create);
 }
 
 pub trait LyricsProvider {

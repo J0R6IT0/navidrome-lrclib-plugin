@@ -1,4 +1,5 @@
 mod applemusic;
+mod genie;
 mod kugou;
 mod lrclib;
 mod lrcmux;
@@ -8,6 +9,7 @@ mod qqmusic;
 mod stixoi;
 
 pub use applemusic::*;
+pub use genie::*;
 pub use kugou::*;
 pub use lrclib::*;
 pub use lrcmux::*;
