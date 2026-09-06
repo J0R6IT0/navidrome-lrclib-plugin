@@ -47,7 +47,8 @@ impl Http {
         self
     }
 
-    /// Sites that gate on the plugin's own user agent are served as a browser.
+    /// For providers that should not know the real plugin User Agent
+    /// and instead use a standard browser one.
     pub fn browser(self) -> Self {
         self.header("User-Agent", BROWSER_USER_AGENT)
     }
