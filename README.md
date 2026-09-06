@@ -45,12 +45,13 @@ Some of the providers don't host lyrics themselves, they pull them from other we
 | ----------- | --------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------- |
 | LRCLIB      |                                                                       | plain,lrc,lyricsfile | Supports custom instances                                            |
 | lyrics.ovh  | Genius, AZLyrics, Paroles.net, LyricsMania, Letras.mus.br, Lyrics.com | plain                | Supports custom instances                                            |
-| lrcmux      | Genius, KuGou, Musixmatch, NetEase, YouTube Music                     | plain,lrc,elrc       | Supports custom instances                                            |
+| lrcmux      | Genius, KuGou, Musixmatch, LRCLIB, YouTube Music                      | plain,lrc,elrc       | Supports custom instances                                            |
 | KuGou       |                                                                       | lrc,elrc             |                                                                      |
 | NetEase     |                                                                       | lrc,elrc             |                                                                      |
 | QQ Music    |                                                                       | lrc,elrc             |                                                                      |
 | Apple Music |                                                                       | ttml                 | Supports translations and romanization. Requires active subscription |
-| stixoi.info |                                                                       | plain                | Greek lyrics archive                                                 |
+| stixoi.info |                                                                       | plain                | Greek lyrics                                                         |
+| Genie Music |                                                                       | lrc                  | Korean lyrics                                                        |
 
 ## Provider modes
 

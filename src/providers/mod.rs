@@ -1,22 +1,17 @@
 use crate::{
     config::PluginConfig,
     providers::{
-        applemusic::AppleMusic, kugou::Kugou, lrclib::Lrclib, lrcmux::LrcMux, lyricsovh::LyricsOvh,
-        netease::NetEase, qqmusic::QQMusic, stixoi::Stixoi,
+        error::ProviderResult,
+        services::{AppleMusic, Genie, KuGou, Lrclib, Lrcmux, LyricsOvh, NetEase, QQMusic, Stixoi},
     },
     types::{Lyrics, LyricsKind},
 };
-use nd_pdk::lyrics::{Error, TrackInfo};
+use nd_pdk::lyrics::TrackInfo;
 
-mod applemusic;
-mod kugou;
-mod lrclib;
-mod lrcmux;
-mod lyricsovh;
-mod netease;
-mod qqmusic;
+pub mod error;
+mod http;
 mod registry;
-mod stixoi;
+mod services;
 
 pub use registry::ProviderRegistry;
 
@@ -32,18 +27,20 @@ const BROWSER_USER_AGENT: &str =
 pub fn register_providers(registry: &mut ProviderRegistry) {
     registry.register("lrclib", Lrclib::create);
     registry.register("lyrics.ovh", LyricsOvh::create);
-    registry.register("lrcmux", LrcMux::create);
-    registry.register("kugou", Kugou::create);
+    registry.register("lrcmux", Lrcmux::create);
+    registry.register("kugou", KuGou::create);
     registry.register("netease", NetEase::create);
     registry.register("qqmusic", QQMusic::create);
     registry.register("applemusic", AppleMusic::create);
     registry.register("stixoi", Stixoi::create);
+    registry.register("genie", Genie::create);
 }
 
 pub trait LyricsProvider {
     fn supported_kinds(&self) -> &'static [LyricsKind];
 
-    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig) -> Result<Option<Lyrics>, Error>;
+    fn fetch_lyrics(&self, track: &TrackInfo, cfg: &PluginConfig)
+    -> ProviderResult<Option<Lyrics>>;
 
     /// Configuration parameters worth including in logs, as `(key, value)` pairs.
     /// Never return a token, cookie or any other credential here.

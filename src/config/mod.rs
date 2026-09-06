@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::{
     config::ttl::{DEFAULT_CACHE_TTL, DEFAULT_NEGATIVE_CACHE_TTL},
     types::LyricsKind,
@@ -18,9 +20,9 @@ const DEFAULT_LYRICS_FORMATS: [LyricsKind; 2] = [LyricsKind::Lrc, LyricsKind::Pl
 const DEFAULT_PLAIN_EXTENSION: &str = "txt";
 const DEFAULT_INSTRUMENTAL_EXTENSION: &str = "txt";
 
-const DEFAULT_DURATION_TOLERANCE_SECS: f32 = 3.0;
-const MIN_DURATION_TOLERANCE_SECS: f32 = 1.0;
-const MAX_DURATION_TOLERANCE_SECS: f32 = 3600.0;
+const DEFAULT_DURATION_TOLERANCE: Duration = Duration::from_secs(3);
+const MIN_DURATION_TOLERANCE: Duration = Duration::from_secs(1);
+const MAX_DURATION_TOLERANCE: Duration = Duration::from_secs(3600);
 
 const DEFAULT_INSTRUMENTAL_TEXT: &str = "Instrumental";
 const DEFAULT_FOLDER_TEMPLATE: &str = "_lyrics/{type}/{track:album_artist} - {track:album}/{track:disc_number:2} - {track:track_number:2} {track:title}";
@@ -47,7 +49,7 @@ pub struct PluginConfig {
     pub write_to_specific_folder_template: String,
     pub strip_section_labels: bool,
     pub instrumental_text: Option<String>,
-    pub duration_tolerance_secs: f32,
+    pub duration_tolerance: Duration,
 }
 
 impl Default for PluginConfig {
@@ -72,7 +74,7 @@ impl Default for PluginConfig {
             write_to_specific_folder_template: DEFAULT_FOLDER_TEMPLATE.to_string(),
             strip_section_labels: false,
             instrumental_text: Some(DEFAULT_INSTRUMENTAL_TEXT.to_string()),
-            duration_tolerance_secs: DEFAULT_DURATION_TOLERANCE_SECS,
+            duration_tolerance: DEFAULT_DURATION_TOLERANCE,
         }
     }
 }
@@ -113,7 +115,7 @@ impl PluginConfig {
                 .unwrap_or_else(|| DEFAULT_FOLDER_TEMPLATE.to_string()),
             strip_section_labels: get_bool("stripSectionLabels", false)?,
             instrumental_text: resolve_instrumental_text()?,
-            duration_tolerance_secs: resolve_duration_tolerance()?,
+            duration_tolerance: resolve_duration_tolerance()?,
         })
     }
 
@@ -127,10 +129,6 @@ impl PluginConfig {
         } else {
             self.cache_ttl_hours
         }
-    }
-
-    pub fn duration_tolerance_ms(&self) -> u64 {
-        (self.duration_tolerance_secs * 1000.0).round() as u64
     }
 
     pub fn skips_instrumental(&self) -> bool {
@@ -210,18 +208,20 @@ fn normalize_extension(ext: &str) -> String {
         .collect()
 }
 
-fn resolve_duration_tolerance() -> Result<f32> {
+fn resolve_duration_tolerance() -> Result<Duration> {
     let raw = get_f64(
         "durationToleranceSeconds",
-        DEFAULT_DURATION_TOLERANCE_SECS as f64,
-    )? as f32;
+        DEFAULT_DURATION_TOLERANCE.as_secs_f64(),
+    )?;
 
-    let clamped = raw.clamp(MIN_DURATION_TOLERANCE_SECS, MAX_DURATION_TOLERANCE_SECS);
-    if clamped != raw {
-        warn!("durationToleranceSeconds {raw} is out of range, clamping to {clamped}s");
+    let duration =
+        Duration::from_secs_f64(raw).clamp(MIN_DURATION_TOLERANCE, MAX_DURATION_TOLERANCE);
+
+    if duration.as_secs_f64() != raw {
+        warn!("durationToleranceSeconds {raw} is out of range, clamping to {duration:?}");
     }
 
-    Ok(clamped)
+    Ok(duration)
 }
 
 #[cfg(test)]
@@ -339,18 +339,6 @@ mod tests {
             (LyricsKind::Instrumental, 7),
         ] {
             check_cache_ttl(&config, kind, expected);
-        }
-    }
-
-    #[test]
-    fn a_tolerance_in_seconds_keeps_its_fraction_in_milliseconds() {
-        for (secs, expected) in [(3.0, 3000), (2.5, 2500), (0.25, 250), (0.0005, 1)] {
-            let config = PluginConfig {
-                duration_tolerance_secs: secs,
-                ..PluginConfig::default()
-            };
-
-            assert_eq!(config.duration_tolerance_ms(), expected, "{secs}s");
         }
     }
 

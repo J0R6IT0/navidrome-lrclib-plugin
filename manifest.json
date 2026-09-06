@@ -1,7 +1,7 @@
 {
   "name": "Lyrics",
   "author": "Jorge Pardo",
-  "version": "7.2.0",
+  "version": "8.0.0",
   "description": "Fetch lyrics from multiple sources",
   "website": "https://github.com/J0R6IT0/navidrome-lyrics-plugin",
 
@@ -75,7 +75,8 @@
                   { "const": "netease", "title": "NetEase" },
                   { "const": "qqmusic", "title": "QQ Music" },
                   { "const": "applemusic", "title": "Apple Music" },
-                  { "const": "stixoi", "title": "stixoi.info" }
+                  { "const": "stixoi", "title": "stixoi.info" },
+                  { "const": "genie", "title": "Genie Music" }
                 ]
               },
               "baseUrl": {
@@ -90,8 +91,8 @@
                 "default": [
                   "genius",
                   "kugou",
+                  "lrclib",
                   "musixmatch",
-                  "netease",
                   "ytmusic"
                 ],
                 "items": {
@@ -99,8 +100,8 @@
                   "oneOf": [
                     { "const": "genius", "title": "Genius" },
                     { "const": "kugou", "title": "KuGou" },
+                    { "const": "lrclib", "title": "LRCLIB" },
                     { "const": "musixmatch", "title": "Musixmatch" },
-                    { "const": "netease", "title": "NetEase" },
                     { "const": "ytmusic", "title": "YouTube Music" }
                   ]
                 }
@@ -115,73 +116,41 @@
                 "title": "Storefront",
                 "description": "Optional. Storefront code (e.g. us, gb, es). Auto-detected from the account when left empty. Only include it if the auto-detection is not working correctly."
               },
-              "includeTranslations": {
-                "type": "boolean",
-                "title": "Include translations (availability varies by song)",
-                "default": false
-              },
               "translationLanguage": {
                 "type": "string",
-                "title": "Translation language",
-                "default": "en-US",
+                "title": "Include translation (availability varies by song)",
+                "default": "none",
                 "oneOf": [
-                  { "const": "ar", "title": "Arabic" },
+                  { "const": "none", "title": "Off" },
                   { "const": "ca", "title": "Catalan" },
                   { "const": "zh-Hans-CN", "title": "Chinese (Simplified)" },
-                  {
-                    "const": "zh-Hant-HK",
-                    "title": "Chinese (Traditional, Hong Kong)"
-                  },
-                  {
-                    "const": "zh-Hant-TW",
-                    "title": "Chinese (Traditional, Taiwan)"
-                  },
-                  { "const": "hr", "title": "Croatian" },
-                  { "const": "cs", "title": "Czech" },
-                  { "const": "da", "title": "Danish" },
-                  { "const": "nl", "title": "Dutch" },
-                  { "const": "en-AU", "title": "English (Australia)" },
-                  { "const": "en-CA", "title": "English (Canada)" },
-                  { "const": "en-GB", "title": "English (UK)" },
-                  { "const": "en-US", "title": "English (US)" },
-                  { "const": "fi", "title": "Finnish" },
+                  { "const": "en-US", "title": "English" },
                   { "const": "fr-FR", "title": "French" },
-                  { "const": "fr-CA", "title": "French (Canada)" },
                   { "const": "de-DE", "title": "German" },
-                  { "const": "de-CH", "title": "German (Switzerland)" },
-                  { "const": "el", "title": "Greek" },
-                  { "const": "he", "title": "Hebrew" },
-                  { "const": "hi", "title": "Hindi" },
-                  { "const": "hu", "title": "Hungarian" },
-                  { "const": "id", "title": "Indonesian" },
                   { "const": "it", "title": "Italian" },
                   { "const": "ja", "title": "Japanese" },
                   { "const": "ko", "title": "Korean" },
-                  { "const": "ms", "title": "Malay" },
-                  { "const": "nb", "title": "Norwegian Bokmål" },
-                  { "const": "pl", "title": "Polish" },
-                  { "const": "pt-BR", "title": "Portuguese (Brazil)" },
-                  { "const": "pt-PT", "title": "Portuguese (Portugal)" },
-                  { "const": "ro", "title": "Romanian" },
-                  { "const": "ru", "title": "Russian" },
-                  { "const": "sk", "title": "Slovak" },
-                  { "const": "es-MX", "title": "Spanish (Mexico)" },
-                  { "const": "es-ES", "title": "Spanish (Spain)" },
-                  { "const": "sv", "title": "Swedish" },
-                  { "const": "th", "title": "Thai" },
-                  { "const": "tr", "title": "Turkish" },
-                  { "const": "uk", "title": "Ukrainian" },
-                  { "const": "vi", "title": "Vietnamese" }
-                ],
-                "description": "Language the translation should be in. Only used when translations are included."
+                  { "const": "pt-BR", "title": "Portuguese" },
+                  { "const": "es-MX", "title": "Spanish" }
+                ]
               },
-              "includeRomanization": {
-                "type": "boolean",
-                "title": "Include romanization (availability varies by song)",
-                "default": false
+              "romanizationScript": {
+                "type": "string",
+                "title": "Include transliteration (availability varies by song)",
+                "default": "none",
+                "oneOf": [
+                  { "const": "none", "title": "Off" },
+                  { "const": "und-Latn", "title": "Latin" },
+                  { "const": "und-Hang", "title": "Hangul" },
+                  { "const": "und-Kana", "title": "Katakana" }
+                ]
               }
             },
-            "required": ["provider"],
+            "required": [
+              "provider",
+              "romanizationScript",
+              "translationLanguage"
+            ],
             "allOf": [
               {
                 "if": {
@@ -313,7 +282,7 @@
 
         "writeLyrics": {
           "type": "boolean",
-          "title": "Write lyrics to files",
+          "title": "Write lyrics to sidecar files",
           "default": false
         },
 
@@ -520,44 +489,37 @@
                         }
                       }
                     },
+
                     {
-                      "type": "Control",
-                      "scope": "#/properties/includeRomanization",
-                      "rule": {
-                        "effect": "SHOW",
-                        "condition": {
-                          "scope": "#/properties/provider",
-                          "schema": {
-                            "const": "applemusic"
+                      "type": "HorizontalLayout",
+                      "elements": [
+                        {
+                          "type": "Control",
+                          "scope": "#/properties/romanizationScript",
+                          "rule": {
+                            "effect": "SHOW",
+                            "condition": {
+                              "scope": "#/properties/provider",
+                              "schema": {
+                                "const": "applemusic"
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "type": "Control",
+                          "scope": "#/properties/translationLanguage",
+                          "rule": {
+                            "effect": "SHOW",
+                            "condition": {
+                              "scope": "#/properties/provider",
+                              "schema": {
+                                "const": "applemusic"
+                              }
+                            }
                           }
                         }
-                      }
-                    },
-                    {
-                      "type": "Control",
-                      "scope": "#/properties/includeTranslations",
-                      "rule": {
-                        "effect": "SHOW",
-                        "condition": {
-                          "scope": "#/properties/provider",
-                          "schema": {
-                            "const": "applemusic"
-                          }
-                        }
-                      }
-                    },
-                    {
-                      "type": "Control",
-                      "scope": "#/properties/translationLanguage",
-                      "rule": {
-                        "effect": "SHOW",
-                        "condition": {
-                          "scope": "#/properties/includeTranslations",
-                          "schema": {
-                            "const": true
-                          }
-                        }
-                      }
+                      ]
                     }
                   ]
                 }

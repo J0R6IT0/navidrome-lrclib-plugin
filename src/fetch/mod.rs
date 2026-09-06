@@ -1,5 +1,6 @@
 use crate::cache::LyricsCache;
 use crate::config::{PluginConfig, ProviderEntry};
+use crate::providers::error::ProviderError;
 use crate::providers::{LyricsProvider, ProviderRegistry, register_providers};
 use crate::types::Lyrics;
 use extism_pdk::{info, warn};
@@ -7,6 +8,7 @@ use nd_pdk::lyrics::TrackInfo;
 use ranking::{Rank, Ranker};
 
 mod ranking;
+mod ratelimit;
 mod selection;
 
 pub enum Outcome {
@@ -156,6 +158,11 @@ impl Orchestrator<'_> {
             provider_id,
         } = prepared;
 
+        if let Some(time_left) = ratelimit::remaining(provider_id) {
+            info!("skipping rate limited provider '{label}', time left: {time_left}s");
+            return ProviderFetch::Empty;
+        }
+
         if self.is_negative(provider_id) {
             info!(
                 "provider '{}' negative-cached for this track, skipping",
@@ -187,6 +194,13 @@ impl Orchestrator<'_> {
             Ok(None) => {
                 info!("provider '{}' returned no lyrics", label);
                 self.mark_negative(provider_id);
+                ProviderFetch::Empty
+            }
+            Err(ProviderError::RateLimited { retry_after_secs }) => {
+                info!(
+                    "provider '{label}' has been rate limited, backing off for {retry_after_secs}s"
+                );
+                ratelimit::record(provider_id, retry_after_secs);
                 ProviderFetch::Empty
             }
             Err(e) => {
