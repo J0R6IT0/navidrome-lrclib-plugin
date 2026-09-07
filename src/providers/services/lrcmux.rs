@@ -11,7 +11,14 @@ use std::time::Duration;
 
 const DEFAULT_BASE_URL: &str = "https://api.lrcmux.dev";
 
-const KNOWN_SOURCES: &[&str] = &["genius", "kugou", "lrclib", "musixmatch", "ytmusic"];
+const KNOWN_SOURCES: &[&str] = &[
+    "genius",
+    "kugou",
+    "lrclib",
+    "musixmatch",
+    "netease",
+    "ytmusic",
+];
 
 #[derive(Deserialize)]
 struct JsonResponse {
@@ -319,11 +326,13 @@ mod tests {
         assert_eq!(restrict_sources(Some("")), None);
         assert_eq!(restrict_sources(Some(" , ")), None);
         assert_eq!(
-            restrict_sources(Some("genius,kugou,lrclib,musixmatch,ytmusic")),
+            restrict_sources(Some("genius,kugou,lrclib,musixmatch,netease,ytmusic")),
             None
         );
         assert_eq!(
-            restrict_sources(Some("ytmusic,lrclib,musixmatch,kugou,genius,future")),
+            restrict_sources(Some(
+                "ytmusic,lrclib,musixmatch,kugou,genius,netease,future"
+            )),
             None
         );
     }

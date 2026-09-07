@@ -93,6 +93,7 @@
                   "kugou",
                   "lrclib",
                   "musixmatch",
+                  "netease",
                   "ytmusic"
                 ],
                 "items": {
@@ -102,6 +103,7 @@
                     { "const": "kugou", "title": "KuGou" },
                     { "const": "lrclib", "title": "LRCLIB" },
                     { "const": "musixmatch", "title": "Musixmatch" },
+                    { "const": "netease", "title": "NetEase" },
                     { "const": "ytmusic", "title": "YouTube Music" }
                   ]
                 }
